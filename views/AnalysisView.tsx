@@ -1,306 +1,198 @@
-import React, { useState, useRef } from 'react';
-import { EcoAtlasCrew, Schemas } from '../backend';
-import { 
-  EnvironmentalRecord, 
-  PerceptionResult, 
-  NarrationResult,
-  TemporalChangeResult,
-  AcousticResult,
-  SynthesisResult,
-  ConfidenceLevel
-} from '../types';
+
+import React, { useState, useEffect } from 'react';
+import { EnvironmentalRecord, MediaPacket } from '../types';
 
 interface AnalysisViewProps {
-  onRecordFound: (record: EnvironmentalRecord) => void;
+  packet: MediaPacket;
+  parkName: string;
   records: EnvironmentalRecord[];
+  onComplete: (record: EnvironmentalRecord) => void;
 }
 
-const ConfidenceBadge: React.FC<{ level: ConfidenceLevel }> = ({ level }) => {
-  const colors = {
-    High: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-    Medium: 'bg-amber-100 text-amber-800 border-amber-200',
-    Low: 'bg-orange-100 text-orange-800 border-orange-200',
-  };
-  return (
-    <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-widest border ${colors[level]}`}>
-      {level} Confidence
-    </span>
-  );
-};
+const STEPS = [
+  { id: 'telemetry', label: 'Rhythm', agent: 'Technician', desc: 'Feeling the heart of the trail', weight: 10 },
+  { id: 'perception', label: 'Vision', agent: 'Observer', desc: 'Connecting with the landscape', weight: 30 },
+  { id: 'acoustic', label: 'Sound', agent: 'Listener', desc: 'Hearing the subtle frequencies', weight: 50 },
+  { id: 'fusion', label: 'Perspective', agent: 'Fusionist', desc: 'Aligning with the mountain', weight: 65 },
+  { id: 'spatial', label: 'Place', agent: 'Spatial', desc: 'Grounding in shared memory', weight: 80 },
+  { id: 'temporal', label: 'History', agent: 'Historian', desc: 'Noticing what is changing', weight: 90 },
+  { id: 'narrative', label: 'Story', agent: 'Bard', desc: 'Writing your field note', weight: 100 }
+];
 
-const UncertaintyNotice: React.FC<{ explanation: string, suggestion: string }> = ({ explanation, suggestion }) => (
-  <div className="mt-4 p-4 bg-orange-50/50 rounded-xl border border-orange-100 space-y-2">
-    <p className="text-[10px] text-orange-800 leading-relaxed font-medium">
-      <span className="font-bold">Observation Note:</span> {explanation}
-    </p>
-    <p className="text-[10px] text-[#2D4739] italic opacity-60">
-      <span className="font-bold">Guidance:</span> {suggestion}
-    </p>
-  </div>
-);
+const AnalysisView: React.FC<AnalysisViewProps> = ({ packet, parkName, records, onComplete }) => {
+  const [activeStepId, setActiveStepId] = useState<string>('telemetry');
+  const [status, setStatus] = useState('Atlas is connecting what it observed');
+  const [progress, setProgress] = useState(0);
 
-const AnalysisView: React.FC<AnalysisViewProps> = ({ onRecordFound, records }) => {
-  const [file, setFile] = useState<File | null>(null);
-  const [audioFile, setAudioFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState('');
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  
-  const [results, setResults] = useState<{
-    perception?: PerceptionResult;
-    temporal?: TemporalChangeResult;
-    acoustic?: AcousticResult;
-    synthesis?: SynthesisResult;
-    narration?: NarrationResult;
-    artifact?: string;
-  }>({});
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const audioInputRef = useRef<HTMLInputElement>(null);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files?.[0];
-    if (selected) {
-      setFile(selected);
-      setPreviewUrl(URL.createObjectURL(selected));
-      setResults({});
-    }
-  };
-
-  const handleAudioChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files?.[0];
-    if (selected) setAudioFile(selected);
-  };
-
-  const runAnalysis = async () => {
-    if (!file) return;
-    setLoading(true);
-    setStatus('Preparing environmental synthesis...');
-
-    const getBase64 = (f: File): Promise<string> => new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(f);
-      reader.onload = () => resolve((reader.result as string).split(',')[1]);
-    });
-
-    try {
-      const visualBase64 = await getBase64(file);
-      const crew = new EcoAtlasCrew(records);
-
-      setStatus('Sensing immediate signals...');
-      const p = await crew.executeTask("Observer", {}, Schemas.Perception, "Analyze environmental signals.", { base64: visualBase64, mimeType: file.type });
-      
-      let acousticResult = null;
-      if (audioFile) {
-        setStatus('Listening to the soundscape...');
-        const audioBase64 = await getBase64(audioFile);
-        const a = await crew.executeTask("Listener", {}, Schemas.Acoustic, "Analyze ambient soundscape.", { base64: audioBase64, mimeType: audioFile.type });
-        acousticResult = a.output;
+  useEffect(() => {
+    const runSynthesis = async () => {
+      if (packet.segments.length === 0) {
+        onComplete({
+          id: packet.sessionId,
+          timestamp: Date.now(),
+          park_name: parkName,
+          location: { lat: 0, lng: 0, name: parkName },
+          confidence: 'Medium',
+          summary: "No media provided for analysis. The rhythm of the trail is being noted.",
+          multimodalEvidence: [],
+          tags: ['A quiet walk']
+        });
+        return;
       }
 
-      setStatus('Consulting historical records...');
-      const t = await crew.executeTask("Historian", { current_perception: p.output }, Schemas.Temporal, "Analyze temporal changes.", { base64: visualBase64, mimeType: file.type });
+      const formData = new FormData();
+      try {
+        for (let i = 0; i < packet.segments.length; i++) {
+          const segment = packet.segments[i];
+          const res = await fetch(`data:${segment.mimeType};base64,${segment.base64}`);
+          const blob = await res.blob();
+          formData.append('images', blob, `observation_${i}.jpg`);
+        }
+        
+        formData.append('park_name', parkName);
+        
+        const mockSensors = Array.from({ length: 5 }, (_, i) => ({
+           timestamp: Date.now() - (i * 600000),
+           altitude: 1240 + (i * 10),
+           heart_rate: 70 + (i * 5),
+           motion_cadence: 120,
+           lat: 45.0 + (i * 0.001),
+           lng: -120.0 + (i * 0.001)
+        }));
 
-      // Mocked wearable/effort context for the synthesizer
-      const experienceContext = {
-        motion_patterns: "Slow ascent with frequent brief pauses.",
-        elevation_delta: "+150m over 2km",
-        stops: "3 long pauses (5min+) at viewpoint coordinates.",
-        environment_stress: acousticResult?.activity_levels?.wind === 'Strong' ? "High wind exposure" : "Calm conditions"
-      };
+        formData.append('sensor_json', JSON.stringify(mockSensors));
+        formData.append('history_json', JSON.stringify(records.slice(0, 5).map(r => ({
+          park_name: r.park_name,
+          summary: r.summary,
+          tags: r.tags
+        }))));
 
-      setStatus('Synthesizing experience insights...');
-      const s = await crew.executeTask("Synthesizer", { p: p.output, context: experienceContext }, Schemas.Synthesis, "Infer trail difficulty, fatigue zones, and accessibility notes.");
+        setStatus('The world is revealing its secrets slowly');
+        
+        const progressInterval = setInterval(() => {
+          setProgress(prev => {
+            if (prev < 95) return prev + 1;
+            return prev;
+          });
+        }, 300);
 
-      setStatus('Verifying environmental truth...');
-      const v = await crew.executeTask("Auditor", { p: p.output, t: t.output, a: acousticResult, s: s.output }, Schemas.Verification, "Verify signals for scientific consistency.");
-      
-      setStatus('Composing your field note...');
-      const n = await crew.executeTask("Bard", v.output, Schemas.Narration, "Synthesize all insights into a warm, structured narrative field note.");
-      
-      setStatus('Illustrating findings...');
-      const art = await crew.executeTask("Illustrator", v.output, null, "Generate a technical field sketch.");
+        const apiResponse = await fetch('/api/v1/synthesis', {
+          method: 'POST',
+          body: formData
+        });
 
-      setResults({ 
-        perception: p.output, 
-        temporal: t.output, 
-        acoustic: acousticResult, 
-        synthesis: s.output,
-        narration: n.output, 
-        artifact: art.output 
-      });
-    } catch (err) {
-      console.error(err);
-      setStatus("Nature is complex. Let's try another perspective.");
-    } finally {
-      setLoading(false);
-    }
-  };
+        if (!apiResponse.ok) throw new Error("The conversation was interrupted.");
+        
+        const result = await apiResponse.json();
+        const data = result.data;
+        
+        clearInterval(progressInterval);
+        setProgress(100);
+        setStatus('Nature has written a new chapter for you');
+
+        const finalRecord: EnvironmentalRecord = {
+          id: packet.sessionId,
+          timestamp: Date.now(),
+          park_name: parkName,
+          location: { lat: 0, lng: 0, name: parkName },
+          confidence: 'High',
+          summary: data.narrative.consistent.substring(0, 150),
+          multimodalEvidence: packet.segments.map(s => `data:${s.mimeType};base64,${s.base64}`),
+          tags: data.perception.inferences?.map((i: any) => i.inference) || ['Discovery'],
+          observation_events: data.telemetry.events,
+          acoustic_analysis: data.acoustic,
+          fusion_analysis: data.fusion,
+          field_narrative: {
+            consistent: data.narrative.consistent,
+            different: data.narrative.different,
+            changing: data.narrative.changing,
+            uncertain: data.narrative.uncertain
+          },
+          spatial_insight: { 
+            text: data.spatial, 
+            sources: [] 
+          },
+          temporal_delta: data.temporal.comparison_narrative,
+          experience_synthesis: {
+            confidence: 'High',
+            trail_difficulty_perception: "Connecting the signals",
+            beginner_tips: data.perception.visual_patterns?.slice(0, 3) || []
+          }
+        };
+
+        setTimeout(() => onComplete(finalRecord), 1500);
+      } catch (err) {
+        console.error("Synthesis Orchestration Error:", err);
+        setStatus('The path is obscured for a moment');
+        setTimeout(() => onComplete({
+          id: packet.sessionId,
+          timestamp: Date.now(),
+          park_name: parkName,
+          location: { lat: 0, lng: 0, name: parkName },
+          confidence: 'Low',
+          summary: "A story was partially told.",
+          multimodalEvidence: packet.segments.map(s => `data:${s.mimeType};base64,${s.base64}`),
+          tags: ['Unfinished note']
+        }), 2000);
+      }
+    };
+
+    runSynthesis();
+  }, []);
 
   return (
-    <div className="max-w-2xl mx-auto space-y-12 pb-32">
-      <header className="space-y-1 text-center">
-        <p className="text-caption">Deep Intelligence</p>
-        <h2 className="text-h1 text-[#2D4739]">Synthesis Engine</h2>
+    <div className="max-w-xl mx-auto min-h-[80vh] flex flex-col pt-12 space-y-12 animate-in fade-in duration-700">
+      <header className="text-center space-y-3">
+        <div className="w-16 h-16 bg-[#2D4739] rounded-[24px] flex items-center justify-center mx-auto mb-4 text-white shadow-2xl">
+           <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+           </svg>
+        </div>
+        <h2 className="text-display text-[#2D4739]">Connecting the signals</h2>
+        <p className="text-body text-[#8E8B82]">Specialists are gathering their notes about the path you walked.</p>
       </header>
 
-      {!results.narration && !loading && (
-        <div className="space-y-4">
-          <section 
-            onClick={() => fileInputRef.current?.click()}
-            className="soft-card p-16 flex flex-col items-center justify-center cursor-pointer hover:bg-white/50 transition-all text-center border-dashed relative overflow-hidden"
-          >
-            {previewUrl ? (
-              <img src={previewUrl} className="absolute inset-0 w-full h-full object-cover opacity-10" alt="Preview" />
-            ) : (
-              <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-6">📸</div>
-            )}
-            <div className="relative z-10">
-              <p className="text-h2 text-[#2D4739]">Add Visual Frame</p>
-              <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
-            </div>
-          </section>
-
-          <section 
-            onClick={() => audioInputRef.current?.click()}
-            className={`soft-card p-12 flex flex-col items-center justify-center cursor-pointer hover:bg-white/50 transition-all text-center border-dashed ${audioFile ? 'bg-emerald-50 border-emerald-200' : ''}`}
-          >
-            <div className="text-2xl mb-2">{audioFile ? '🔊' : '🎤'}</div>
-            <p className="text-xs font-bold uppercase tracking-widest text-[#2D4739]">
-              {audioFile ? 'Audio Sample Ready' : 'Add Soundscape Sample'}
-            </p>
-            <input type="file" ref={audioInputRef} onChange={handleAudioChange} className="hidden" accept="audio/*" />
-          </section>
+      <div className="space-y-4">
+        <div className="flex justify-between items-end px-1">
+          <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-[#2D4739]">Thinking with care</p>
+          <p className="text-h2 text-[#2D4739] font-mono">{progress}%</p>
         </div>
-      )}
-
-      {loading && (
-        <div className="py-24 text-center space-y-8">
-           <div className="w-12 h-12 mx-auto border-4 border-t-[#2D4739] border-gray-100 rounded-full animate-spin"></div>
-           <p className="text-body font-medium text-[#2D4739] animate-pulse">{status}</p>
+        <div className="h-3 w-full bg-[#E2E8DE] rounded-full overflow-hidden shadow-inner">
+          <div 
+            className="h-full bg-[#2D4739] transition-all duration-700 ease-out"
+            style={{ width: `${progress}%` }}
+          />
         </div>
-      )}
+      </div>
 
-      {file && !loading && !results.narration && (
-        <button onClick={runAnalysis} className="w-full py-5 btn-pine text-h2 shadow-lg">
-          Initiate Synthesis
-        </button>
-      )}
-
-      {results.narration && (
-        <div className="animate-in fade-in slide-in-from-bottom-8 duration-1000 space-y-16">
-          <section className="soft-card p-10 bg-[#FDFDFB] border-[#E2E8DE] border-2 space-y-10">
-             <div className="text-center space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-emerald-800/40">Field Narrative</p>
-                <div className="w-12 h-[1px] bg-emerald-800/10 mx-auto"></div>
-             </div>
-             
-             <div className="space-y-8 font-serif italic text-lg leading-relaxed text-[#2D4739]/90">
-                <p>"{results.narration.overview}"</p>
-                <p>"{results.narration.revelations}"</p>
-                <p>"{results.narration.changes}"</p>
-                <div className="pt-6 border-t border-emerald-800/5">
-                   <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-800/40 mb-3 font-sans not-italic">For your next walk</p>
-                   <p className="text-sm">"{results.narration.future_notes}"</p>
-                </div>
-             </div>
-          </section>
-
-          {results.synthesis && (
-            <section className="space-y-4">
-              <div className="flex justify-between items-end px-1">
-                <h3 className="text-caption uppercase tracking-widest">Trail Human Interface</h3>
-                <ConfidenceBadge level={results.synthesis.confidence} />
-              </div>
-              <div className="soft-card p-8 bg-white space-y-6">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <p className="text-xs font-bold uppercase tracking-widest text-[#2D4739]/50">Difficulty Perception</p>
-                    <p className="text-h2 text-[#2D4739]">{results.synthesis.trail_difficulty_perception}</p>
-                  </div>
-                  <div className={`px-4 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
-                    results.synthesis.exposure_stress.level === 'High' ? 'bg-orange-100 text-orange-700' : 'bg-emerald-100 text-emerald-700'
+      <div className="soft-card p-8 bg-white space-y-6 shadow-2xl border-none">
+        <p className="text-[10px] font-bold text-[#8E8B82] uppercase tracking-[0.2em] border-b border-[#F9F9F7] pb-4">Specialists are gathering</p>
+        <div className="space-y-6">
+          {STEPS.map((step) => {
+            const isDone = progress >= step.weight;
+            const isActive = progress < step.weight && progress > (step.weight - (step.id === 'telemetry' ? 10 : 15));
+            return (
+              <div key={step.id} className={`flex items-center justify-between transition-all duration-700 ${isDone || isActive ? 'opacity-100 scale-100' : 'opacity-20 scale-95'}`}>
+                <div className="flex items-center space-x-5">
+                  <div className={`w-12 h-12 rounded-[18px] flex items-center justify-center text-xs border-2 transition-all duration-500 ${
+                    isDone ? 'bg-[#2D4739] border-[#2D4739] text-white' : 
+                    isActive ? 'border-[#2D4739] text-[#2D4739] animate-pulse' : 
+                    'bg-[#F9F9F7] border-[#E2E8DE] text-[#8E8B82]'
                   }`}>
-                    {results.synthesis.exposure_stress.level} Exposure
+                    {isDone ? '✓' : ''}
+                    {isActive && <div className="w-2 h-2 bg-[#2D4739] rounded-full animate-ping" />}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-[#2D4739] uppercase tracking-wider mb-0.5">{step.label}</p>
+                    <p className="text-[10px] text-[#8E8B82] font-mono">{step.desc}</p>
                   </div>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                   <div className="space-y-3">
-                      <h4 className="text-[10px] font-bold uppercase tracking-widest text-[#8E8B82]">Beginner Observations</h4>
-                      <ul className="space-y-2">
-                        {results.synthesis.beginner_tips.map((tip, i) => (
-                          <li key={i} className="text-sm text-[#4A443F] flex items-start space-x-2">
-                            <span className="text-emerald-500 font-bold">•</span>
-                            <span>{tip}</span>
-                          </li>
-                        ))}
-                      </ul>
-                   </div>
-                   <div className="space-y-3">
-                      <h4 className="text-[10px] font-bold uppercase tracking-widest text-orange-400">Safety Notes</h4>
-                      <ul className="space-y-2">
-                        {results.synthesis.safety_observations.map((note, i) => (
-                          <li key={i} className="text-sm text-[#4A443F] flex items-start space-x-2">
-                            <span className="text-orange-500 font-bold">!</span>
-                            <span>{note}</span>
-                          </li>
-                        ))}
-                      </ul>
-                   </div>
-                </div>
-
-                {results.synthesis.confidence !== 'High' && (
-                  <UncertaintyNotice 
-                    explanation={results.synthesis.uncertainty_explanation} 
-                    suggestion={results.synthesis.improvement_suggestion} 
-                  />
-                )}
+                {isActive && <span className="text-[10px] font-bold text-[#2D4739] animate-pulse font-mono">WORKING</span>}
               </div>
-            </section>
-          )}
-
-          {results.acoustic && (
-            <section className="space-y-4">
-               <div className="flex justify-between items-end px-1">
-                 <h3 className="text-caption uppercase tracking-widest">Ambient Soundscape Profile</h3>
-                 <ConfidenceBadge level={results.acoustic.confidence} />
-               </div>
-               <div className="soft-card p-8 bg-white space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-                    <div className="space-y-3">
-                       <p className="text-body text-[#4A443F] leading-relaxed italic">"{results.acoustic.soundscape_summary}"</p>
-                       <p className="text-[10px] text-[#8E8B82]">{results.acoustic.notable_changes}</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                       {Object.entries(results.acoustic.activity_levels).map(([k, v]) => (
-                         <div key={k} className="bg-[#F9F9F7] p-3 rounded-xl border border-[#E2E8DE]">
-                            <p className="text-[8px] uppercase font-bold text-gray-400 mb-1">{k}</p>
-                            <p className="text-xs font-bold text-[#2D4739]">{v}</p>
-                         </div>
-                       ))}
-                    </div>
-                  </div>
-                  {results.acoustic.confidence !== 'High' && (
-                    <UncertaintyNotice 
-                      explanation={results.acoustic.uncertainty_explanation} 
-                      suggestion={results.acoustic.improvement_suggestion} 
-                    />
-                  )}
-               </div>
-            </section>
-          )}
-          
-          <div className="flex space-x-4">
-            <button onClick={() => {setResults({}); setFile(null); setPreviewUrl(null);}} className="flex-1 py-5 bg-white border border-[#E2E8DE] text-[#2D4739] text-h2 font-bold rounded-2xl">
-              New Observation
-            </button>
-            <button className="flex-1 py-5 btn-pine text-h2 font-bold rounded-2xl shadow-lg">
-              Save to Journal
-            </button>
-          </div>
+            );
+          })}
         </div>
-      )}
+      </div>
     </div>
   );
 };

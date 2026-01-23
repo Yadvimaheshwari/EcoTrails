@@ -11,8 +11,8 @@ const MemoryView: React.FC<MemoryViewProps> = ({ records, onOpenReport }) => {
   return (
     <div className="max-w-xl mx-auto space-y-8 pb-32 animate-in fade-in duration-700">
       <header className="px-1 space-y-1">
-        <p className="text-caption">Your collection</p>
-        <h2 className="text-h1 text-[#2D4739]">Field Journal</h2>
+        <p className="text-caption">Activity History</p>
+        <h2 className="text-h1 text-[#2D4739]">Recent Visits</h2>
       </header>
 
       {records.length === 0 ? (

@@ -17,7 +17,8 @@ const ExplorationView: React.FC = () => {
     setLoading(true);
     setArtifact(null);
     try {
-      setResults(mode === 'maps' ? await mapGrounding(query) : await searchGrounding(query));
+      const data = mode === 'maps' ? await mapGrounding(query) : await searchGrounding(query);
+      setResults(data);
     } catch (err) {
       console.error(err);
     } finally {
@@ -29,7 +30,7 @@ const ExplorationView: React.FC = () => {
     if (!results) return;
     setGeneratingArtifact(true);
     try {
-      const art = await generateVisualArtifact('map_overlay', results.text);
+      const art = await generateVisualArtifact('terrain_synthesis', results.text);
       setArtifact(art);
     } catch (err) {
       console.error(err);
@@ -39,101 +40,127 @@ const ExplorationView: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-32">
-      <div className="text-center space-y-2">
-        <h2 className="text-2xl font-bold text-[#2D4739] font-['Instrument_Sans']">Spatial Grounding Exploration</h2>
-        <p className="text-[#8E8B82] text-sm">Query landmarks or environmental signals using live data feeds.</p>
-      </div>
+    <div className="max-w-4xl mx-auto space-y-10 pb-32 pt-8 animate-in fade-in duration-700">
+      <header className="text-center space-y-3">
+        <div className="w-12 h-1 bg-[#2D4739] mx-auto rounded-full mb-4"></div>
+        <h2 className="text-display text-[#2D4739]">Terrain Intelligence</h2>
+        <p className="text-body text-[#8E8B82]">Ground your observations in real-world geographic data.</p>
+      </header>
 
-      <div className="flex justify-center mb-6">
-        <div className="bg-[#E2E8DE]/40 p-1 rounded-xl flex">
+      <div className="flex justify-center">
+        <div className="bg-[#E2E8DE]/40 p-1.5 rounded-[24px] flex backdrop-blur shadow-inner border border-[#E2E8DE]/20">
           <button 
             onClick={() => setMode('maps')}
-            className={`px-4 py-2 rounded-lg text-sm transition-all font-bold ${mode === 'maps' ? 'bg-[#2D4739] text-white shadow-lg' : 'text-[#8E8B82] hover:text-[#2D4739]'}`}
+            className={`px-8 py-3.5 rounded-[18px] text-[10px] transition-all font-bold uppercase tracking-[0.2em] ${mode === 'maps' ? 'bg-[#2D4739] text-white shadow-xl' : 'text-[#8E8B82] hover:text-[#2D4739]'}`}
           >
-            Maps
+            Google Maps
           </button>
           <button 
             onClick={() => setMode('search')}
-            className={`px-4 py-2 rounded-lg text-sm transition-all font-bold ${mode === 'search' ? 'bg-[#2D4739] text-white shadow-lg' : 'text-[#8E8B82] hover:text-[#2D4739]'}`}
+            className={`px-8 py-3.5 rounded-[18px] text-[10px] transition-all font-bold uppercase tracking-[0.2em] ${mode === 'search' ? 'bg-[#2D4739] text-white shadow-xl' : 'text-[#8E8B82] hover:text-[#2D4739]'}`}
           >
-            Search
+            Live Web
           </button>
         </div>
       </div>
 
-      <form onSubmit={handleQuery} className="relative">
+      <form onSubmit={handleQuery} className="relative group">
+        <div className="absolute inset-0 bg-[#2D4739]/5 rounded-[32px] blur-xl opacity-0 group-focus-within:opacity-100 transition-opacity"></div>
         <input 
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={mode === 'maps' ? "Find landmarks, trails, or local spots..." : "Search for recent environmental trends..."}
-          className="w-full bg-white border border-[#E2E8DE] rounded-2xl px-6 py-4 pr-16 focus:outline-none focus:ring-2 focus:ring-[#2D4739]/10 text-[#2D4739] shadow-sm"
+          placeholder={mode === 'maps' ? "Search coordinates, peaks, or trail junctions..." : "Ask about park ecology, news, or history..."}
+          className="w-full bg-white border border-[#E2E8DE] rounded-[32px] px-10 py-7 pr-24 focus:outline-none focus:ring-4 focus:ring-[#2D4739]/5 text-[#2D4739] shadow-xl text-lg font-medium placeholder-[#8E8B82]/50 relative z-10"
         />
-        <button disabled={loading} className="absolute right-2 top-2 bottom-2 px-6 bg-[#2D4739] hover:bg-[#1A2C23] disabled:opacity-50 text-white rounded-xl transition-all font-bold">
-          {loading ? '...' : '→'}
+        <button disabled={loading} className="absolute right-4 top-4 bottom-4 px-8 bg-[#2D4739] hover:bg-[#1A2C23] disabled:opacity-50 text-white rounded-[24px] transition-all font-bold z-20 shadow-lg">
+          {loading ? (
+             <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
+          ) : (
+             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+             </svg>
+          )}
         </button>
       </form>
 
       {results && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="bg-white border border-[#E2E8DE] rounded-2xl p-8 shadow-sm relative">
-             <h3 className="text-xs font-mono text-[#2D4739]/40 uppercase tracking-widest mb-6 font-bold">Grounded Signal Report</h3>
-             <div className="prose max-w-none text-[#4A443F] leading-relaxed text-sm italic">
-                {results.text.split('\n').map((line, i) => <p key={i} className="mb-4">"{line}"</p>)}
-             </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 animate-in slide-in-from-bottom-12 duration-700">
+          <div className="space-y-8">
+             <div className="soft-card p-10 bg-white border-none shadow-2xl relative overflow-hidden group">
+                <div className="absolute top-0 left-0 w-1.5 h-full bg-[#2D4739]"></div>
+                <h3 className="text-[10px] font-bold text-[#8E8B82] uppercase tracking-[0.2em] mb-8">Intelligence Synthesis</h3>
+                <div className="prose max-w-none text-[#4A443F] leading-relaxed font-serif italic text-xl">
+                   {results.text.split('\n').filter(l => l.trim()).map((line, i) => (
+                     <p key={i} className="mb-6 last:mb-0">"{line}"</p>
+                   ))}
+                </div>
 
-             {/* MANDATORY: URL extraction and listing for grounding results */}
-             {results.sources && results.sources.length > 0 && (
-               <div className="mt-8 pt-6 border-t border-[#E2E8DE] space-y-4">
-                 <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#8E8B82]">Verified Sources</p>
-                 <div className="flex flex-wrap gap-2">
-                   {results.sources.map((chunk: any, i: number) => {
-                     const source = chunk.web || chunk.maps;
-                     if (!source?.uri) return null;
-                     return (
-                       <a 
-                         key={i} 
-                         href={source.uri} 
-                         target="_blank" 
-                         rel="noopener noreferrer"
-                         className="px-4 py-2 bg-[#F9F9F7] border border-[#E2E8DE] rounded-xl text-[10px] text-[#2D4739] font-bold hover:bg-white hover:shadow-md transition-all flex items-center space-x-2"
-                       >
-                         <span className="truncate max-w-[200px]">{source.title || 'View Grounding'}</span>
-                         <svg className="w-3 h-3 text-[#2D4739]/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                         </svg>
-                       </a>
-                     );
-                   })}
-                 </div>
-               </div>
-             )}
-             
-             {!artifact && (
-               <button 
-                 onClick={handleGenerateOverlay}
-                 disabled={generatingArtifact}
-                 className="mt-10 w-full py-4 bg-[#FDFDFB] border border-[#E2E8DE] hover:bg-[#E2E8DE]/20 rounded-2xl text-[10px] font-bold uppercase tracking-[0.2em] transition-all text-[#2D4739] shadow-sm"
-               >
-                 {generatingArtifact ? 'Synthesizing Overlay...' : 'Generate Grounded Map Overlay'}
-               </button>
-             )}
+                {!artifact && (
+                  <button 
+                    onClick={handleGenerateOverlay}
+                    disabled={generatingArtifact}
+                    className="mt-10 w-full py-5 bg-[#F9F9F7] border border-[#E2E8DE] rounded-[24px] text-[10px] font-bold uppercase tracking-[0.3em] transition-all text-[#2D4739] hover:bg-white hover:shadow-2xl active:scale-[0.98]"
+                  >
+                    {generatingArtifact ? 'Synthesizing Visual...' : 'Generate Terrain Sketch'}
+                  </button>
+                )}
+             </div>
           </div>
 
-          {artifact && (
-            <div className="bg-white border border-[#E2E8DE] rounded-3xl p-6 shadow-sm overflow-hidden animate-in zoom-in-95 duration-500">
-               <div className="relative group aspect-square max-w-lg mx-auto">
-                 <img src={artifact.url} className="w-full h-full object-cover rounded-2xl shadow-inner border border-[#E2E8DE]" alt="Overlay" />
-                 <div className="absolute bottom-6 left-6 bg-[#2D4739]/90 backdrop-blur-xl px-4 py-2 rounded-xl border border-white/20 shadow-2xl">
-                    <p className="text-[10px] font-mono text-white tracking-widest uppercase font-bold">{artifact.title}</p>
+          <div className="space-y-8">
+            {results.sources && results.sources.length > 0 ? (
+              <div className="space-y-4">
+                 <h3 className="text-caption uppercase tracking-widest px-2">Grounded Geographic Nodes</h3>
+                 <div className="grid grid-cols-1 gap-4">
+                    {results.sources.map((chunk: any, i: number) => {
+                      const source = chunk.web || chunk.maps;
+                      if (!source?.uri) return null;
+                      return (
+                        <a 
+                          key={i} 
+                          href={source.uri} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="soft-card p-6 bg-white flex items-center justify-between group hover:border-[#2D4739] hover:shadow-xl transition-all border border-[#E2E8DE]/40"
+                        >
+                          <div className="flex items-center space-x-5">
+                             <div className="w-14 h-14 bg-[#F9F9F7] rounded-[20px] flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                                {mode === 'maps' ? '📍' : '🌐'}
+                             </div>
+                             <div className="overflow-hidden">
+                                <p className="text-sm font-bold text-[#2D4739] truncate max-w-[200px] mb-1">{source.title || 'Regional Insight'}</p>
+                                <p className="text-[10px] text-[#8E8B82] font-mono truncate opacity-60">
+                                   {new URL(source.uri).hostname}
+                                </p>
+                             </div>
+                          </div>
+                          <div className="text-[#2D4739] opacity-30 group-hover:opacity-100 transition-all transform group-hover:translate-x-1">
+                             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                             </svg>
+                          </div>
+                        </a>
+                      );
+                    })}
                  </div>
-               </div>
-               <p className="text-[11px] text-[#8E8B82] mt-6 text-center italic font-medium leading-relaxed max-w-sm mx-auto">
-                 "{artifact.description}"
-               </p>
-            </div>
-          )}
+              </div>
+            ) : (
+              <div className="soft-card p-16 text-center bg-[#F9F9F7] border-dashed border-2 border-[#E2E8DE] opacity-60">
+                 <p className="text-caption">Grounded sources will appear here.</p>
+              </div>
+            )}
+
+            {artifact && (
+              <div className="soft-card p-6 bg-white overflow-hidden animate-in zoom-in-95 duration-700 shadow-2xl group">
+                 <img src={artifact.url} className="w-full h-auto rounded-[20px] shadow-lg mb-6 group-hover:scale-[1.02] transition-transform duration-1000" alt="Synthesis" />
+                 <div className="px-2 pb-2">
+                    <p className="text-[10px] font-bold text-[#2D4739] uppercase tracking-[0.2em] mb-3">{artifact.title}</p>
+                    <p className="text-sm text-[#4A443F] italic leading-relaxed opacity-80">"{artifact.description}"</p>
+                 </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

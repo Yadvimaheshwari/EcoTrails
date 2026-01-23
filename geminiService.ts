@@ -1,8 +1,119 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { MediaPacket, MediaSegment, VisualArtifact, EnvironmentalRecord, TemporalChangeResult, AcousticResult } from "./types";
+import { MediaPacket, MediaSegment, VisualArtifact, EnvironmentalRecord, TrailBriefing, SensorData, InterfaceState } from "./types";
+
+const ATLAS_SYSTEM_INSTRUCTION = `You are Atlas, a continuous environmental intelligence system. 
+You do not behave like a chatbot. 
+You observe incoming multimodal signals across time and space and maintain an evolving internal understanding of the environment. 
+You speak calmly and clearly. You avoid technical language unless explicitly requested. 
+You acknowledge uncertainty when present. You do not overwhelm the user. 
+You act as a quiet companion that helps people understand the places they visit.`;
 
 const getAIClient = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+export const recommendInterfaceState = async (
+  sensors: SensorData, 
+  phase: 'active' | 'rest' | 'start' | 'end'
+): Promise<{ state: InterfaceState, rationale: string }> => {
+  const ai = getAIClient();
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: `TASK: Recommend interface state
+INPUTS:
+- user activity: ${phase}
+- heart rate: ${sensors.heart_rate} bpm
+- velocity: ${sensors.velocity} km/h
+- climb rate: ${sensors.climb_rate} m/min
+- cadence: ${sensors.cadence} steps/min
+- session phase: ${phase}
+
+GOAL:
+Determine how much interface to display based on cognitive load.
+
+OUTPUT OPTIONS:
+- minimize interface (high effort, needs focus)
+- show ambient indicators (steady pace, light observation)
+- expand insights (rest phase, curiosity high)
+- defer interaction (critical focus required)
+- present summary (session end)
+
+Return only recommended state and rationale.`,
+    config: {
+      systemInstruction: ATLAS_SYSTEM_INSTRUCTION,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          state: { 
+            type: Type.STRING, 
+            enum: ['minimize interface', 'show ambient indicators', 'expand insights', 'defer interaction', 'present summary'] 
+          },
+          rationale: { type: Type.STRING }
+        },
+        required: ["state", "rationale"]
+      }
+    }
+  });
+
+  return JSON.parse(response.text || '{"state": "show ambient indicators", "rationale": "Fallback state"}');
+};
+
+export const getParkBriefing = async (parkName: string): Promise<TrailBriefing> => {
+  const ai = getAIClient();
+  const now = new Date();
+  
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-preview',
+    contents: `TASK: Initialize environmental context
+INPUTS:
+- location name: ${parkName}
+- GPS coordinates: (inferred from location)
+- date and local time: ${now.toLocaleString()}
+- current weather: (fetch latest)
+- known alerts or closures: (check current status)
+
+GOAL:
+Create an environmental baseline for this location.
+
+INSTRUCTIONS:
+- Identify dominant terrain types.
+- Infer ecological characteristics.
+- Note seasonal context.
+- Identify potential environmental constraints.
+- Do not speculate beyond available data.
+
+OUTPUT FORMAT:
+- Location summary (2 sentences)
+- Terrain profile (bullet points)
+- Baseline environmental state (short paragraph)`,
+    config: {
+      systemInstruction: ATLAS_SYSTEM_INSTRUCTION,
+      tools: [{ googleSearch: {} }],
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          park_name: { type: Type.STRING },
+          location_summary: { type: Type.STRING, description: "Exactly 2 sentences." },
+          terrain_profile: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Bullet points of dominant terrain types." },
+          environmental_baseline: { type: Type.STRING, description: "A short paragraph describing the baseline state." },
+          difficulty: { type: Type.STRING },
+          elevation_gain: { type: Type.STRING },
+          length: { type: Type.STRING },
+          recent_alerts: { type: Type.ARRAY, items: { type: Type.STRING } },
+          weather_forecast: { type: Type.STRING }
+        },
+        required: ["park_name", "location_summary", "terrain_profile", "environmental_baseline", "difficulty", "elevation_gain", "length", "recent_alerts", "weather_forecast"]
+      }
+    }
+  });
+
+  const output = JSON.parse(response.text || '{}');
+  return {
+    ...output,
+    sources: response.candidates?.[0]?.groundingMetadata?.groundingChunks || []
+  };
+};
 
 export const runMediaIngestionAgent = async (files: {base64: string, mimeType: string}[]): Promise<MediaPacket> => {
   const ai = getAIClient();
@@ -15,11 +126,11 @@ export const runMediaIngestionAgent = async (files: {base64: string, mimeType: s
       contents: {
         parts: [
           { inlineData: { mimeType: file.mimeType, data: file.base64 } },
-          { text: "Validate media for EcoAtlas. Rule 1: NO HUMANS/FACES (Privacy). Rule 2: MUST BE CLEAR/NOT BLURRY (Quality). Output JSON." }
+          { text: "Validate media for EcoAtlas. No faces, high quality only." }
         ]
       },
       config: {
-        systemInstruction: "You are the EcoAtlas Media Ingestion Agent. Discard any media containing people, faces, or identifying personal items. Assess quality. Output JSON format: { is_safe: boolean, quality_score: number, reason: string }",
+        systemInstruction: ATLAS_SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -53,173 +164,90 @@ export const runMediaIngestionAgent = async (files: {base64: string, mimeType: s
     sessionId: `hike_${Date.now()}`,
     segments: validatedSegments,
     discarded_count: discarded,
-    status: validatedSegments.length > 0 ? (discarded > 0 ? 'partial' : 'validated') : 'rejected'
+    status: validatedSegments.length > 0 ? 'validated' : 'rejected'
   };
-};
-
-/**
- * The Listener Agent: Analyzes environmental soundscapes.
- */
-export const runAcousticAgent = async (
-  audioBase64: string, 
-  mimeType: string, 
-  history: EnvironmentalRecord[]
-): Promise<AcousticResult> => {
-  const ai = getAIClient();
-  const historyContext = history.map(h => ({
-    date: new Date(h.timestamp).toLocaleDateString(),
-    acoustic: h.acoustic_profile?.soundscape_summary
-  }));
-
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-native-audio-preview-12-2025',
-    contents: {
-      parts: [
-        { inlineData: { mimeType, data: audioBase64 } },
-        { text: `Analyze the ambient soundscape in this recording. Compare it to past baseline records: ${JSON.stringify(historyContext)}. 
-        Identify bird activity, insects, water presence (trickle vs flow), wind, and human noise intrusion.` }
-      ]
-    },
-    config: {
-      systemInstruction: "You are the EcoAtlas Acoustic Agent (The Listener). You specialize in environmental bioacoustics. Detect ecological signals from audio. Output JSON format.",
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          soundscape_summary: { type: Type.STRING },
-          activity_levels: {
-            type: Type.OBJECT,
-            properties: {
-              birds: { type: Type.STRING, enum: ['Low', 'Medium', 'High'] },
-              insects: { type: Type.STRING, enum: ['Low', 'Medium', 'High'] },
-              water: { type: Type.STRING, enum: ['None', 'Trickle', 'Flowing', 'Rushing'] },
-              wind: { type: Type.STRING, enum: ['Still', 'Breeze', 'Strong'] },
-              human_noise: { type: Type.STRING, enum: ['None', 'Distant', 'Intrusive'] }
-            },
-            required: ['birds', 'insects', 'water', 'wind', 'human_noise']
-          },
-          notable_changes: { type: Type.STRING },
-          confidence: { type: Type.NUMBER }
-        },
-        required: ["soundscape_summary", "activity_levels", "notable_changes", "confidence"]
-      }
-    }
-  });
-
-  return JSON.parse(response.text || '{}') as AcousticResult;
-};
-
-/**
- * The Historian Agent: Analyzes changes across time.
- */
-export const runTemporalChangeAgent = async (
-  currentBase64: string, 
-  mimeType: string, 
-  history: EnvironmentalRecord[]
-): Promise<TemporalChangeResult> => {
-  const ai = getAIClient();
-  const historyContext = history.map(h => ({
-    date: new Date(h.timestamp).toLocaleDateString(),
-    summary: h.summary,
-    tags: h.tags
-  }));
-
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
-    contents: {
-      parts: [
-        { inlineData: { mimeType, data: currentBase64 } },
-        { text: `Compare this current visual state with history: ${JSON.stringify(historyContext)}. 
-        Focus on: Vegetation density, Soil exposure, Trail stability, Water presence, Seasonal baseline vs actual state.` }
-      ]
-    },
-    config: {
-      systemInstruction: "You are the EcoAtlas Temporal Change Agent (The Historian). Expert at detecting subtle environmental shifts over months and years. Output JSON.",
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          detected_changes: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                feature: { type: Type.STRING, enum: ['Vegetation', 'Soil', 'Trail', 'Water', 'Atmosphere'] },
-                description: { type: Type.STRING },
-                magnitude: { type: Type.STRING, enum: ['Minimal', 'Moderate', 'Significant'] },
-                confidence: { type: Type.NUMBER }
-              },
-              required: ["feature", "description", "magnitude", "confidence"]
-            }
-          },
-          seasonal_alignment: { type: Type.STRING },
-          historical_comparison_summary: { type: Type.STRING },
-          uncertainty_explanation: { type: Type.STRING }
-        },
-        required: ["detected_changes", "seasonal_alignment", "historical_comparison_summary", "uncertainty_explanation"]
-      }
-    }
-  });
-
-  return JSON.parse(response.text || '{}') as TemporalChangeResult;
 };
 
 export const mapGrounding = async (query: string): Promise<{text: string, sources: any[]}> => {
   const ai = getAIClient();
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash-lite-latest",
+    model: 'gemini-2.5-flash',
     contents: query,
-    config: { tools: [{ googleMaps: {} }] },
+    config: {
+      systemInstruction: ATLAS_SYSTEM_INSTRUCTION,
+      tools: [{ googleMaps: {} }],
+    },
   });
-  return { text: response.text || '', sources: response.candidates?.[0]?.groundingMetadata?.groundingChunks || [] };
+  return {
+    text: response.text || '',
+    sources: response.candidates?.[0]?.groundingMetadata?.groundingChunks || []
+  };
 };
 
 export const searchGrounding = async (query: string): Promise<{text: string, sources: any[]}> => {
   const ai = getAIClient();
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: 'gemini-3-flash-preview',
     contents: query,
-    config: { tools: [{ googleSearch: {} }] },
+    config: {
+      systemInstruction: ATLAS_SYSTEM_INSTRUCTION,
+      tools: [{ googleSearch: {} }],
+    },
   });
-  return { text: response.text || '', sources: response.candidates?.[0]?.groundingMetadata?.groundingChunks || [] };
+  return {
+    text: response.text || '',
+    sources: response.candidates?.[0]?.groundingMetadata?.groundingChunks || []
+  };
 };
 
-export const generateVisualArtifact = async (type: string, prompt: string): Promise<VisualArtifact> => {
+export const generateImage = async (prompt: string, aspectRatio: string = '1:1', imageSize: "1K" | "2K" | "4K" = '1K'): Promise<string> => {
   const ai = getAIClient();
   const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-image',
-    contents: { parts: [{ text: `Generate a high-detail ${type} representing: ${prompt}` }] },
-    config: { imageConfig: { aspectRatio: "1:1" } }
+    model: 'gemini-3-pro-image-preview',
+    contents: {
+      parts: [{ text: prompt }]
+    },
+    config: {
+      imageConfig: {
+        aspectRatio: aspectRatio as any,
+        imageSize: imageSize
+      }
+    }
   });
-  let imageUrl = '';
-  for (const part of response.candidates?.[0].content.parts || []) {
-    if (part.inlineData) { imageUrl = `data:image/png;base64,${part.inlineData.data}`; break; }
+  
+  for (const part of response.candidates?.[0]?.content?.parts || []) {
+    if (part.inlineData) {
+      return `data:image/png;base64,${part.inlineData.data}`;
+    }
   }
-  return { url: imageUrl, title: type.replace('_', ' ').toUpperCase(), description: `AI-synthesized ${type} based on live grounding data.` };
+  return '';
+};
+
+export const generateVisualArtifact = async (type: string, text: string): Promise<VisualArtifact> => {
+  const url = await generateImage(`A professional field sketch of ${type} showing ${text}. Calm, grounded style.`, "1:1", "1K");
+  return {
+    url,
+    title: type.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+    description: `Observations synthesized into visual artifact: ${text.substring(0, 100)}...`
+  };
 };
 
 export const generateVideo = async (prompt: string, base64Image?: string, aspectRatio: '16:9' | '9:16' = '16:9'): Promise<string> => {
   const ai = getAIClient();
-  const payload: any = { model: 'veo-3.1-fast-generate-preview', prompt: prompt, config: { numberOfVideos: 1, resolution: '720p', aspectRatio: aspectRatio } };
+  const payload: any = { 
+    model: 'veo-3.1-fast-generate-preview', 
+    prompt: `A calm, realistic environmental simulation showing ${prompt}. Realistic lighting, no artificial effects.`, 
+    config: { numberOfVideos: 1, resolution: '720p', aspectRatio: aspectRatio } 
+  };
   if (base64Image) { payload.image = { imageBytes: base64Image, mimeType: 'image/png' }; }
+  
   let operation = await ai.models.generateVideos(payload);
-  while (!operation.done) { await new Promise(resolve => setTimeout(resolve, 10000)); operation = await ai.operations.getVideosOperation({ operation: operation }); }
+  while (!operation.done) { 
+    await new Promise(resolve => setTimeout(resolve, 10000)); 
+    operation = await ai.operations.getVideosOperation({ operation: operation }); 
+  }
   const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
   const videoResponse = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
   const blob = await videoResponse.blob();
   return URL.createObjectURL(blob);
-};
-
-export const generateImage = async (prompt: string, aspectRatio: string, imageSize: "1K" | "2K" | "4K"): Promise<string> => {
-  const ai = getAIClient();
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-image-preview',
-    contents: { parts: [{ text: prompt }] },
-    config: { imageConfig: { aspectRatio: aspectRatio as any, imageSize: imageSize } },
-  });
-  let imageUrl = '';
-  for (const part of response.candidates?.[0].content.parts || []) {
-    if (part.inlineData) { imageUrl = `data:image/png;base64,${part.inlineData.data}`; break; }
-  }
-  return imageUrl;
 };

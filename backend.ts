@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { 
   AgentDefinition, 
@@ -24,8 +25,8 @@ export const Agents: Record<string, AgentDefinition> = {
   Observer: {
     name: "Observer",
     role: "Perception Specialist",
-    goal: "Extract clean environmental signals. Clearly label confidence and explain any sensory limitations.",
-    backstory: "A rigorous field researcher who values accuracy over speculation. You never guess; if a signal is blurry, you label it Low confidence.",
+    goal: "Infer environmental characteristics from visual data without identifying objects or people. Reason across time, not single images.",
+    backstory: "A rigorous field researcher specialized in subtle ecological shifts and visual patterns.",
     model: "gemini-3-pro-preview",
     tools: []
   },
@@ -33,23 +34,31 @@ export const Agents: Record<string, AgentDefinition> = {
     name: "Listener",
     role: "Acoustic Specialist",
     goal: "Analyze environmental soundscapes. Differentiate between environmental signals and sensor noise.",
-    backstory: "A bioacoustics expert. You are highly skeptical of distant sounds and always qualify your findings based on recording quality.",
+    backstory: "A bioacoustics expert with a highly tuned ear.",
     model: "gemini-2.5-flash-native-audio-preview-12-2025",
     tools: []
+  },
+  Spatial: {
+    name: "Spatial",
+    role: "Spatial Grounding Specialist",
+    goal: "Ground observed trail features in real-world map data and geographic context.",
+    backstory: "A master cartographer who verifies landmarks and terrain features against global data.",
+    model: "gemini-2.5-flash",
+    tools: [{ googleMaps: {} }]
   },
   Historian: {
     name: "Historian",
     role: "Temporal Specialist",
     goal: "Detect environmental changes. Distinguish between seasonal flux and true terrain shifts.",
-    backstory: "A steward of temporal change. You understand that nature is variable and always express the uncertainty of small-sample comparisons.",
+    backstory: "A steward of temporal change, sensitive to historical records.",
     model: "gemini-3-pro-preview",
     tools: []
   },
   Synthesizer: {
     name: "Synthesizer",
-    role: "Experience Analyst",
-    goal: "Synthesize hiking data into human-centric insights. Be transparent about the limitations of wearable-only proxy data.",
-    backstory: "A veteran trail guide. You know that 'difficulty' is subjective and always frame your insights with the appropriate level of certainty.",
+    role: "Reasoning Specialist",
+    goal: "Synthesize hiking data into human-centric trail insights using reasoning over all collected data.",
+    backstory: "A veteran trail guide with deep analytical reasoning capabilities.",
     model: "gemini-3-pro-preview",
     tools: []
   },
@@ -57,7 +66,7 @@ export const Agents: Record<string, AgentDefinition> = {
     name: "Auditor",
     role: "Verification Specialist",
     goal: "Verify signals for scientific consistency. Flag any speculation presented as fact.",
-    backstory: "A meticulous data scientist. Your job is to find the weak links in the interpretation chain and force transparency.",
+    backstory: "A meticulous data scientist focused on ensuring truth.",
     model: "gemini-3-flash-preview",
     tools: []
   },
@@ -65,15 +74,15 @@ export const Agents: Record<string, AgentDefinition> = {
     name: "Bard",
     role: "Narrative Architect",
     goal: "Translate insights into a warm narrative while gracefully acknowledging the unknowns of nature.",
-    backstory: "A nature storyteller. You use reflective language to describe what we think we see, without losing the mystery of the landscape.",
+    backstory: "A nature storyteller who uses warm, non-technical language.",
     model: "gemini-3-pro-preview",
     tools: []
   },
   Illustrator: {
     name: "Illustrator",
     role: "Visual Artist",
-    goal: "Generate field sketches. Use visual styles that reflect the certainty of the data (e.g., cleaner lines for high confidence).",
-    backstory: "A naturalist sketch artist. You prioritize the essence of the trail over perfect realism.",
+    goal: "Generate field sketches. Capture the visual essence of the verified signals.",
+    backstory: "A naturalist sketch artist with a focus on terrain and biodiversity.",
     model: "gemini-2.5-flash-image",
     tools: []
   }
@@ -82,8 +91,8 @@ export const Agents: Record<string, AgentDefinition> = {
 // --- SCHEMAS ---
 const UncertaintySchema = {
   confidence: { type: Type.STRING, enum: ['Low', 'Medium', 'High'] },
-  uncertainty_explanation: { type: Type.STRING, description: "Detailed reason why confidence is limited (e.g., low light, wind noise, lack of baseline data)." },
-  improvement_suggestion: { type: Type.STRING, description: "Specific data needed to increase certainty in the future (e.g., 'Take a photo of this spot in direct midday sun')." }
+  uncertainty_explanation: { type: Type.STRING },
+  improvement_suggestion: { type: Type.STRING }
 };
 
 export const Schemas = {
@@ -91,20 +100,24 @@ export const Schemas = {
     type: Type.OBJECT,
     properties: {
       ...UncertaintySchema,
-      environmental_signals: {
+      visual_patterns: { type: Type.ARRAY, items: { type: Type.STRING } },
+      temporal_changes: { type: Type.ARRAY, items: { type: Type.STRING } },
+      inferences: {
         type: Type.ARRAY,
         items: {
           type: Type.OBJECT,
           properties: {
-            type: { type: Type.STRING },
-            value: { type: Type.STRING },
-            observation: { type: Type.STRING }
+            inference: { type: Type.STRING },
+            confidence: { type: Type.STRING, enum: ['Low', 'Medium', 'High'] }
           }
         }
       },
-      patterns: { type: Type.ARRAY, items: { type: Type.STRING } }
+      vegetation_density_profile: { type: Type.STRING },
+      soil_exposure_profile: { type: Type.STRING },
+      moisture_indicators: { type: Type.ARRAY, items: { type: Type.STRING } },
+      visibility_assessment: { type: Type.STRING }
     },
-    required: ["environmental_signals", "patterns", "confidence", "uncertainty_explanation", "improvement_suggestion"]
+    required: ["visual_patterns", "temporal_changes", "inferences", "confidence", "uncertainty_explanation", "improvement_suggestion"]
   },
   Acoustic: {
     type: Type.OBJECT,
@@ -177,18 +190,15 @@ export const Schemas = {
   Narration: {
     type: Type.OBJECT,
     properties: {
-      overview: { type: Type.STRING, description: "Overview of the walk and atmosphere." },
-      revelations: { type: Type.STRING, description: "What the environment revealed today." },
-      changes: { type: Type.STRING, description: "What changed since the last visit." },
-      future_notes: { type: Type.STRING, description: "What the hiker should notice next time." }
+      consistent: { type: Type.STRING },
+      different: { type: Type.STRING },
+      changing: { type: Type.STRING },
+      uncertain: { type: Type.STRING }
     },
-    required: ["overview", "revelations", "changes", "future_notes"]
+    required: ["consistent", "different", "changing", "uncertain"]
   }
 };
 
-/**
- * Orchestrates multiple agents to perform environmental analysis tasks.
- */
 export class EcoAtlasCrew {
   constructor(private records: EnvironmentalRecord[]) {}
 
@@ -197,7 +207,8 @@ export class EcoAtlasCrew {
     input: any, 
     schema: any, 
     instruction: string, 
-    media?: { base64: string; mimeType: string }
+    media?: { base64: string; mimeType: string }[],
+    location?: { latitude: number, longitude: number }
   ) {
     const ai = getAIClient();
     const agent = Agents[agentName];
@@ -208,7 +219,7 @@ export class EcoAtlasCrew {
         contents: {
           parts: [{ text: `${instruction}. Context: ${JSON.stringify(input)}` }]
         },
-        config: { imageConfig: { aspectRatio: "1:1" } }
+        config: { imageConfig: { aspectRatio: "16:9" } }
       });
       let imageUrl = '';
       for (const part of response.candidates?.[0].content.parts || []) {
@@ -218,28 +229,55 @@ export class EcoAtlasCrew {
     }
 
     const parts: any[] = [
-      { text: `${instruction}\n\nTask Context: ${JSON.stringify(input)}\n\nPast Environmental History: ${JSON.stringify(this.records)}` }
+      { text: `${instruction}\n\nTask Context: ${JSON.stringify(input)}\n\nPast Environmental History: ${JSON.stringify(this.historyContext())}` }
     ];
-    if (media) { parts.unshift({ inlineData: { data: media.base64, mimeType: media.mimeType } }); }
+    if (media && media.length > 0) {
+      media.forEach(m => {
+        parts.unshift({ inlineData: { data: m.base64, mimeType: m.mimeType } });
+      });
+    }
+
+    const config: any = {
+      systemInstruction: `You are the ${agent.role}. Goal: ${agent.goal}. Backstory: ${agent.backstory}.`,
+      thinkingConfig: agent.model.includes('pro') ? { thinkingBudget: 24576 } : undefined
+    };
+
+    if (agent.tools && agent.tools.length > 0) {
+      config.tools = agent.tools;
+      if (location) {
+        config.toolConfig = {
+          retrievalConfig: { latLng: location }
+        };
+      }
+    } else if (schema) {
+      config.responseMimeType = "application/json";
+      config.responseSchema = schema;
+    }
 
     const response = await ai.models.generateContent({
       model: agent.model,
       contents: { parts },
-      config: {
-        systemInstruction: `You are the ${agent.role}. Goal: ${agent.goal}. Backstory: ${agent.backstory}. 
-        CRITICAL RULES:
-        1. Always express uncertainty clearly.
-        2. Never state speculation as fact.
-        3. If evidence is weak, use qualifying language (e.g., 'appears to be', 'suggests', 'might indicate').
-        4. Always provide an explanation for confidence levels below High.
-        5. Always suggest what future data would provide higher certainty.`,
-        responseMimeType: schema ? "application/json" : "text/plain",
-        responseSchema: schema || undefined,
-        thinkingConfig: agent.model.includes('pro') ? { thinkingBudget: 32768 } : undefined
-      }
+      config
     });
+
+    if (agent.name === 'Spatial') {
+      return { 
+        output: { 
+          text: response.text || '', 
+          sources: response.candidates?.[0]?.groundingMetadata?.groundingChunks || [] 
+        } 
+      };
+    }
 
     const output = schema ? JSON.parse(response.text || '{}') : response.text;
     return { output };
+  }
+
+  private historyContext() {
+    return this.records.map(r => ({
+      date: new Date(r.timestamp).toLocaleDateString(),
+      location: r.park_name,
+      summary: r.summary
+    }));
   }
 }

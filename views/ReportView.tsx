@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { EnvironmentalRecord, ConfidenceLevel } from '../types';
 
@@ -14,21 +15,10 @@ const ConfidenceBadge: React.FC<{ level: ConfidenceLevel }> = ({ level }) => {
   };
   return (
     <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-widest border ${colors[level]}`}>
-      {level} Confidence
+      {level} certainty
     </span>
   );
 };
-
-const UncertaintyNotice: React.FC<{ explanation: string, suggestion: string }> = ({ explanation, suggestion }) => (
-  <div className="mt-4 p-4 bg-orange-50/30 rounded-xl border border-orange-100/50 space-y-2">
-    <p className="text-[10px] text-orange-800 leading-relaxed font-medium">
-      <span className="font-bold">Observation Note:</span> {explanation}
-    </p>
-    <p className="text-[10px] text-[#2D4739] italic opacity-60">
-      <span className="font-bold">Improvement Tip:</span> {suggestion}
-    </p>
-  </div>
-);
 
 const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
   const [scrollProgress, setScrollProgress] = useState(0);
@@ -60,26 +50,107 @@ const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
 
       <div className="max-w-xl mx-auto space-y-12 pb-32">
         <section className="relative h-[80vh] flex flex-col justify-end p-8 overflow-hidden">
-          <img src={record.multimodalEvidence[0]} className="absolute inset-0 w-full h-full object-cover" alt="Hero" />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#2D4739]/80 via-transparent"></div>
+          <img src={record.multimodalEvidence[0] || 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b'} className="absolute inset-0 w-full h-full object-cover" alt="Hero" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#2D4739]/90 via-[#2D4739]/20"></div>
           <div className="relative z-10 space-y-4 text-white">
-            <p className="text-caption text-white/70 uppercase tracking-widest">Moment of Arrival</p>
-            <h1 className="text-display leading-none">{record.location.name}</h1>
-            <p className="text-body italic text-white/80">"{record.summary}"</p>
+            <p className="text-caption text-white/70 uppercase tracking-widest">{record.park_name}</p>
+            <h1 className="text-display leading-none">A memory of the trail</h1>
+            <p className="text-body italic text-white/80">"{new Date(record.timestamp).toDateString()}"</p>
           </div>
         </section>
 
+        {record.visual_artifact && (
+          <section className="px-6 space-y-4">
+             <h3 className="text-caption uppercase tracking-widest px-1">A sketch of the land</h3>
+             <div className="soft-card overflow-hidden">
+                <img src={record.visual_artifact} className="w-full h-auto" alt="Field Sketch" />
+             </div>
+          </section>
+        )}
+
         {record.field_narrative && (
           <section className="px-6 space-y-4">
-            <h3 className="text-caption uppercase tracking-widest px-1">Bard's Field Note</h3>
-            <div className="soft-card p-10 bg-white space-y-8 font-serif italic text-lg leading-relaxed text-[#2D4739]/90 border-[#E2E8DE] border-2">
-                <p>"{record.field_narrative.overview}"</p>
-                <p>"{record.field_narrative.revelations}"</p>
-                <p>"{record.field_narrative.changes}"</p>
-                <div className="pt-6 border-t border-emerald-800/5">
-                   <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-800/40 mb-3 font-sans not-italic">Look for this next time</p>
-                   <p className="text-sm font-sans not-italic font-medium text-[#4A443F]">"{record.field_narrative.future_notes}"</p>
+            <h3 className="text-caption uppercase tracking-widest px-1">A story of the walk</h3>
+            <div className="soft-card p-10 bg-white space-y-8 border-[#E2E8DE] border-2">
+                <div className="space-y-2">
+                   <p className="text-[10px] font-bold uppercase tracking-widest text-[#2D4739]/40">Consistency</p>
+                   <p className="font-serif italic text-lg leading-relaxed text-[#2D4739]/90">"{record.field_narrative.consistent}"</p>
                 </div>
+                <div className="space-y-2">
+                   <p className="text-[10px] font-bold uppercase tracking-widest text-[#2D4739]/40">Changes noticed</p>
+                   <p className="font-serif italic text-lg leading-relaxed text-[#2D4739]/90">"{record.field_narrative.different}"</p>
+                </div>
+                <div className="space-y-2">
+                   <p className="text-[10px] font-bold uppercase tracking-widest text-[#2D4739]/40">Evolution</p>
+                   <p className="font-serif italic text-lg leading-relaxed text-[#2D4739]/90">"{record.field_narrative.changing}"</p>
+                </div>
+                <div className="pt-6 border-t border-emerald-800/5">
+                   <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-800/40 mb-3">Things left unknown</p>
+                   <p className="text-sm font-sans font-medium text-[#4A443F]">"{record.field_narrative.uncertain}"</p>
+                </div>
+            </div>
+          </section>
+        )}
+
+        {record.temporal_delta && (
+          <section className="px-6 space-y-4">
+            <h3 className="text-caption uppercase tracking-widest px-1">The Land's Memory</h3>
+            <div className="soft-card p-8 bg-white border-[#E2E8DE] relative overflow-hidden">
+               <div className="absolute top-0 right-0 p-4 opacity-5">
+                  <svg className="w-24 h-24" fill="currentColor" viewBox="0 0 24 24">
+                     <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
+                  </svg>
+               </div>
+               <p className="text-[10px] font-bold uppercase text-[#2D4739]/60 tracking-widest mb-4">Historical Drift</p>
+               <p className="text-body text-[#4A443F] leading-relaxed font-serif italic text-lg relative z-10">
+                 "{record.temporal_delta}"
+               </p>
+               <div className="mt-6 pt-4 border-t border-[#F9F9F7]">
+                  <p className="text-[10px] text-[#8E8B82] italic">Atlas compares this path against your prior visit history and regional seasonal drift.</p>
+               </div>
+            </div>
+          </section>
+        )}
+
+        {record.fusion_analysis && (
+          <section className="px-6 space-y-4">
+            <h3 className="text-caption uppercase tracking-widest px-1">Perspective Fusion</h3>
+            <div className="soft-card p-8 bg-white border-[#E2E8DE] space-y-8 relative overflow-hidden">
+               <div className="absolute top-0 right-0 p-4 opacity-5">
+                  <svg className="w-32 h-32" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+                  </svg>
+               </div>
+
+               <div className="space-y-4 relative z-10">
+                 {record.fusion_analysis.consistent_observations.length > 0 && (
+                   <div className="space-y-3">
+                     <p className="text-[10px] font-bold uppercase text-emerald-600 tracking-widest">Orbital & Ground Alignment</p>
+                     <div className="space-y-2">
+                       {record.fusion_analysis.consistent_observations.map((obs, i) => (
+                         <div key={i} className="flex items-start space-x-3 text-sm text-[#4A443F] bg-emerald-50/50 p-3 rounded-xl border border-emerald-100">
+                           <span className="mt-1">🛰️</span>
+                           <p>{obs}</p>
+                         </div>
+                       ))}
+                     </div>
+                   </div>
+                 )}
+
+                 {record.fusion_analysis.divergent_observations.length > 0 && (
+                   <div className="space-y-3">
+                     <p className="text-[10px] font-bold uppercase text-amber-600 tracking-widest">Perspective Divergence</p>
+                     <div className="space-y-2">
+                       {record.fusion_analysis.divergent_observations.map((obs, i) => (
+                         <div key={i} className="flex items-start space-x-3 text-sm text-[#4A443F] bg-amber-50/50 p-3 rounded-xl border border-amber-100">
+                           <span className="mt-1">🔍</span>
+                           <p>{obs}</p>
+                         </div>
+                       ))}
+                     </div>
+                   </div>
+                 )}
+               </div>
             </div>
           </section>
         )}
@@ -87,82 +158,20 @@ const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
         {record.experience_synthesis && (
           <section className="px-6 space-y-4">
              <div className="flex justify-between items-end px-1">
-                <h3 className="text-caption uppercase tracking-widest">Trail Interface</h3>
+                <h3 className="text-caption uppercase tracking-widest">Reasoning & Synthesis</h3>
                 <ConfidenceBadge level={record.experience_synthesis.confidence} />
              </div>
              <div className="soft-card p-8 space-y-6 bg-white border-[#E2E8DE]">
-                <div className="space-y-2">
-                   <h4 className="text-h2 text-[#2D4739]">{record.experience_synthesis.trail_difficulty_perception}</h4>
-                   <p className="text-body text-[#4A443F] opacity-70">Accessibility: {record.experience_synthesis.accessibility_notes}</p>
+                <h4 className="text-h2 text-[#2D4739]">{record.experience_synthesis.trail_difficulty_perception}</h4>
+                <div className="grid grid-cols-1 gap-4">
+                   {record.experience_synthesis.beginner_tips.map((tip, i) => (
+                     <div key={i} className="flex items-start space-x-3">
+                        <span className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center text-[10px] text-emerald-700 shrink-0">✓</span>
+                        <p className="text-sm text-[#4A443F] leading-relaxed">{tip}</p>
+                     </div>
+                   ))}
                 </div>
-                
-                <div className="space-y-4 pt-4 border-t border-[#F9F9F7]">
-                   <div className="flex flex-wrap gap-2">
-                      {record.experience_synthesis.exposure_stress.factors.map(f => (
-                        <span key={f} className="text-[10px] font-bold uppercase tracking-widest px-3 py-1 bg-orange-50 text-orange-600 rounded-full">
-                          {f}
-                        </span>
-                      ))}
-                   </div>
-                   <div className="grid grid-cols-1 gap-4">
-                      {record.experience_synthesis.beginner_tips.slice(0, 2).map((tip, i) => (
-                        <div key={i} className="flex items-start space-x-3">
-                           <span className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center text-[10px] text-emerald-700 shrink-0">✓</span>
-                           <p className="text-sm text-[#4A443F] leading-relaxed">{tip}</p>
-                        </div>
-                      ))}
-                   </div>
-                </div>
-
-                {record.experience_synthesis.confidence !== 'High' && (
-                  <UncertaintyNotice 
-                    explanation={record.experience_synthesis.uncertainty_explanation} 
-                    suggestion={record.experience_synthesis.improvement_suggestion} 
-                  />
-                )}
              </div>
-          </section>
-        )}
-
-        {record.acoustic_profile && (
-          <section className="px-6 space-y-4">
-            <div className="flex justify-between items-end px-1">
-               <h3 className="text-caption uppercase tracking-widest">Soundscape Profile</h3>
-               <ConfidenceBadge level={record.acoustic_profile.confidence} />
-            </div>
-            <div className="soft-card p-8 bg-[#2D4739] text-white border-none overflow-hidden relative">
-              <div className="absolute inset-0 opacity-10">
-                <div className="flex items-end justify-center h-full space-x-1 py-8">
-                  {Array.from({length: 40}).map((_, i) => (
-                    <div 
-                      key={i} 
-                      className="w-1 bg-white rounded-full animate-pulse" 
-                      style={{ 
-                        height: `${20 + Math.random() * 80}%`,
-                        animationDelay: `${i * 0.05}s`,
-                        animationDuration: `${0.5 + Math.random()}s`
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-              <div className="relative z-10 space-y-6">
-                 <p className="text-h2 italic font-light leading-relaxed">"{record.acoustic_profile.soundscape_summary}"</p>
-                 <div className="grid grid-cols-2 gap-4">
-                    {Object.entries(record.acoustic_profile.activity_levels).map(([k, v]) => (
-                      <div key={k} className="bg-white/10 rounded-xl p-3 border border-white/5">
-                        <p className="text-[8px] uppercase font-bold text-white/40 mb-1">{k}</p>
-                        <p className="text-xs font-bold">{v}</p>
-                      </div>
-                    ))}
-                 </div>
-                 {record.acoustic_profile.confidence !== 'High' && (
-                    <div className="mt-4 p-3 bg-white/5 rounded-xl border border-white/10 text-[9px] text-white/60 leading-relaxed italic">
-                      <span className="font-bold uppercase text-white/40">Signal Clarity Note:</span> {record.acoustic_profile.uncertainty_explanation}
-                    </div>
-                 )}
-              </div>
-            </div>
           </section>
         )}
 
@@ -171,7 +180,7 @@ const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
             onClick={onBack}
             className="w-full py-5 bg-[#2D4739] text-white rounded-2xl text-h2 font-bold shadow-xl"
           >
-            Close Report
+            The story continues later
           </button>
         </section>
       </div>
