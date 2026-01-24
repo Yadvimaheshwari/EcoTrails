@@ -13,13 +13,18 @@ import {
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import axios from 'axios';
-
-const API_BASE_URL = 'http://localhost:8000';
+import { API_BASE_URL } from '../config/api';
 
 const PostHikeInsightsScreen: React.FC = () => {
   const route = useRoute();
   const navigation = useNavigation();
-  const { sessionId, record } = route.params as any;
+  
+  // Type-safe route params
+  type RouteParams = {
+    sessionId?: string;
+    record?: any;
+  };
+  const { sessionId, record } = (route.params || {}) as RouteParams;
 
   const [loading, setLoading] = useState(!record);
   const [insights, setInsights] = useState<any>(record || null);
@@ -37,8 +42,10 @@ const PostHikeInsightsScreen: React.FC = () => {
         `${API_BASE_URL}/api/v1/sessions/${sessionId}/record`
       );
       setInsights(response.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading insights:', error);
+      const errorMessage = error.response?.data?.detail || error.message || 'Failed to load insights';
+      console.warn('Insights loading failed:', errorMessage);
     } finally {
       setLoading(false);
     }

@@ -14,8 +14,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const API_BASE_URL = 'http://localhost:8000';
+import { API_BASE_URL } from '../config/api';
 
 interface EnvironmentalRecord {
   id: string;

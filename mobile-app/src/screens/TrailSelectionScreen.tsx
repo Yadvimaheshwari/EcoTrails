@@ -13,8 +13,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import axios from 'axios';
-
-const API_BASE_URL = 'http://localhost:8000';
+import { API_BASE_URL } from '../config/api';
 
 interface Park {
   name: string;
@@ -49,8 +48,12 @@ const TrailSelectionScreen: React.FC = () => {
         parkName: park.name,
         deviceId: 'ecodroid-001', // In production, get from device pairing
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating session:', error);
+      // Show user-friendly error message
+      const errorMessage = error.response?.data?.detail || error.message || 'Failed to start hike. Please check your connection.';
+      // In production, use Alert.alert() here
+      console.warn('Session creation failed:', errorMessage);
     } finally {
       setLoading(null);
     }

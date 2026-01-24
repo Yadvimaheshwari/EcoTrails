@@ -23,12 +23,30 @@ interface Observation {
   features?: string[];
   timestamp: number;
   location?: { lat: number; lng: number };
+  confidence?: 'Low' | 'Medium' | 'High';
 }
 
 const ActiveHikeScreen: React.FC = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { sessionId, parkName, deviceId } = route.params as any;
+  
+  // Type-safe route params
+  type RouteParams = {
+    sessionId: string;
+    parkName: string;
+    deviceId: string;
+  };
+  const params = (route.params || {}) as RouteParams;
+  const { sessionId, parkName, deviceId } = params;
+  
+  // Safety check - if params are missing, show error
+  if (!sessionId || !parkName || !deviceId) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.errorText}>Missing required parameters</Text>
+      </View>
+    );
+  }
 
   const [observations, setObservations] = useState<Observation[]>([]);
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -59,8 +77,13 @@ const ActiveHikeScreen: React.FC = () => {
               });
             }
           });
-        } catch (error) {
-          Alert.alert('Connection Error', 'Failed to connect to EcoDroid device');
+        } catch (error: any) {
+          console.error('EcoDroid connection error:', error);
+          Alert.alert(
+            'Connection Error',
+            'Failed to connect to EcoDroid device. The app will continue in demo mode.',
+            [{ text: 'OK' }]
+          );
         }
       }
     };
@@ -282,6 +305,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '600',
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#DC2626',
+    textAlign: 'center',
+    marginTop: 50,
   },
 });
 

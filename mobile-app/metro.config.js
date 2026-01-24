@@ -10,7 +10,8 @@ config.resolver.blockList = [
   /\.git\/.*/,
   /\.expo\/.*/,
   /\.metro\/.*/,
-  /dist\/.*/,
+  // Don't block dist/ in node_modules (needed for packages like memoize-one)
+  // /dist\/.*/,
 ];
 
 // Optimize watcher - use Watchman if available, otherwise reduce file watching
@@ -29,7 +30,8 @@ config.watcher = {
     /\.git\/.*/,
     /\.expo\/.*/,
     /\.metro\/.*/,
-    /dist\/.*/,
+    // Don't ignore dist/ in node_modules (needed for packages like memoize-one)
+    // /dist\/.*/,
   ],
 };
 
