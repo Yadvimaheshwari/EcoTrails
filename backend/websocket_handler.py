@@ -10,6 +10,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from backend.realtime_processor import RealtimeProcessor
 from backend.models import HikeSession, RealtimeObservation, EcoDroidDevice
+from backend.redis_client import redis_client
 from datetime import datetime
 import uuid
 
@@ -55,6 +56,11 @@ class ConnectionManager:
     
     async def send_wearable_alert(self, user_id: str, alert: Dict[str, Any]):
         """Send alert that should be forwarded to wearables"""
+        # Queue alert in Redis for wearable devices
+        queue_key = f"wearable_alerts:{user_id}"
+        redis_client.push_queue(queue_key, alert)
+        
+        # Also send to active WebSocket connections
         # Find active sessions for user
         # In production, maintain user_id -> session_id mapping
         await self.send_personal_message({

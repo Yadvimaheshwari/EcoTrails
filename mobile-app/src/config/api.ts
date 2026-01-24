@@ -23,10 +23,10 @@ const getApiBaseUrl = (): string => {
   }
 
   // For simulators/emulators, localhost works
-  // For physical devices, replace with your computer's IP
-  // Example: 'http://192.168.1.100:8000'
-  // You can set this via environment variable: DEVICE_IP=192.168.1.100
-  const DEVICE_IP = process.env.DEVICE_IP || 'localhost';
+  // For physical devices, use your computer's local IP
+  // Default IP detected: 10.0.0.143
+  // You can override via environment variable: DEVICE_IP=192.168.1.100
+  const DEVICE_IP = process.env.DEVICE_IP || '10.0.0.143';
   
   return `http://${DEVICE_IP}:8000`;
 };

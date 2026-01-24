@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from backend.database import get_db, init_db
 from backend.websocket_handler import handle_ecodroid_stream
+from backend.redis_client import redis_client
 from backend.models import (
     HikeSession, RealtimeObservation, EnvironmentalRecord,
     EcoDroidDevice, WearableDevice, WearableAlert
@@ -336,6 +337,11 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 @app.on_event("startup")
 async def startup_event():
     init_db()
+    # Initialize Redis (will fallback to in-memory if not available)
+    if redis_client.use_redis:
+        logger.info("Redis connected - using Redis for message queuing")
+    else:
+        logger.info("Redis not available - using in-memory storage")
     logger.info("EcoAtlas backend started")
 
 # Initialize real-time processor
