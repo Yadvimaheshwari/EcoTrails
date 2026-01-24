@@ -31,13 +31,7 @@
     "plugins": [
       "expo-location",
       "expo-camera",
-      "expo-asset",
-      [
-        "react-native-maps",
-        {
-          "googleMapsApiKey": ""
-        }
-      ]
+      "expo-asset"
     ]
   }
 }
