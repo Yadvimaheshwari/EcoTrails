@@ -18,8 +18,10 @@ cat > react-native-worklets/package.json << 'EOF'
 EOF
 
 # Create plugin.js file that re-exports from core
+# Use the actual plugin implementation from lib/commonjs/plugin/index.js
 cat > react-native-worklets/plugin.js << 'EOF'
-module.exports = require('../react-native-worklets-core/plugin.js');
+// Re-export the actual Babel plugin function from react-native-worklets-core
+module.exports = require('../react-native-worklets-core/lib/commonjs/plugin/index.js');
 EOF
 
 echo "Created react-native-worklets alias for react-native-worklets-core"
