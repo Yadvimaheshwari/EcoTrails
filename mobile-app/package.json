@@ -21,6 +21,7 @@
     "expo-camera": "~17.0.10",
     "expo-location": "~19.0.8",
     "expo-sensors": "~15.0.8",
+    "memoize-one": "^6.0.0",
     "react": "19.1.0",
     "react-native": "0.81.5",
     "react-native-gesture-handler": "~2.28.0",
