@@ -30,7 +30,8 @@
     },
     "plugins": [
       "expo-location",
-      "expo-camera"
+      "expo-camera",
+      "expo-asset"
     ]
   }
 }
