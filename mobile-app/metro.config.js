@@ -1,23 +1,38 @@
 const { getDefaultConfig } = require('expo/metro-config');
+const path = require('path');
 
 const config = getDefaultConfig(__dirname);
 
-// Reduce file watching overhead - exclude node_modules from watching
+// Aggressively exclude node_modules from watching
 config.watchFolders = [__dirname];
 config.resolver.blockList = [
-  /node_modules\/.*\/node_modules\/react-native\/.*/,
+  /node_modules\/.*\/node_modules\/.*/,
+  /\.git\/.*/,
+  /\.expo\/.*/,
+  /\.metro\/.*/,
+  /dist\/.*/,
+  /build\/.*/,
 ];
 
-// Optimize watcher to reduce file handles
+// Optimize watcher - use Watchman if available, otherwise reduce file watching
 config.watcher = {
   ...config.watcher,
   healthCheck: {
     enabled: true,
   },
-  // Reduce the number of files watched
   watchman: {
     deferStates: ['hg.update'],
   },
+  // Reduce polling interval and exclude patterns
+  additionalExts: ['cjs', 'mjs'],
+  ignore: [
+    /node_modules\/.*/,
+    /\.git\/.*/,
+    /\.expo\/.*/,
+    /\.metro\/.*/,
+    /dist\/.*/,
+    /build\/.*/,
+  ],
 };
 
 // Exclude large directories from watching

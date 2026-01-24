@@ -4,10 +4,20 @@
 cd "$(dirname "$0")"
 
 # Increase file descriptor limit for this session (macOS default is 256)
-ulimit -n 4096
+# Try to set it as high as possible
+ulimit -n 65536 2>/dev/null || ulimit -n 4096 2>/dev/null || ulimit -n 2048
 
 # Verify the limit was set
-echo "File descriptor limit set to: $(ulimit -n)"
+CURRENT_LIMIT=$(ulimit -n)
+echo "File descriptor limit set to: $CURRENT_LIMIT"
+
+# Check if Watchman is available (better file watching)
+if command -v watchman &> /dev/null; then
+  echo "Watchman detected - using for better file watching"
+else
+  echo "⚠️  Watchman not found. Install with: brew install watchman"
+  echo "   This will significantly improve file watching performance"
+fi
 
 # Clear Metro cache to avoid stale file handles
 echo "Clearing Metro cache..."
