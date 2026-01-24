@@ -1,4 +1,5 @@
 
+import './aistudio-mock';
 import React, { useState, useEffect } from 'react';
 import Navigation from './components/Navigation';
 import { AppView, EnvironmentalRecord, MediaPacket, TrailBriefing } from './types';
@@ -26,8 +27,21 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const checkApiKey = async () => {
-      const selected = await window.aistudio.hasSelectedApiKey();
-      setHasApiKey(selected);
+      try {
+        if (window.aistudio) {
+          const selected = await window.aistudio.hasSelectedApiKey();
+          setHasApiKey(selected);
+        } else {
+          // Fallback: check environment variable or localStorage
+          const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || localStorage.getItem('gemini_api_key');
+          setHasApiKey(!!apiKey);
+        }
+      } catch (error) {
+        console.error('Error checking API key:', error);
+        // Fallback: check environment variable or localStorage
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || localStorage.getItem('gemini_api_key');
+        setHasApiKey(!!apiKey);
+      }
     };
     checkApiKey();
 
@@ -45,8 +59,26 @@ const App: React.FC = () => {
   }, []);
 
   const handleSelectKey = async () => {
-    await window.aistudio.openSelectKey();
-    setHasApiKey(true);
+    try {
+      if (window.aistudio) {
+        await window.aistudio.openSelectKey();
+      } else {
+        // Fallback: prompt for API key
+        const key = prompt('Enter your Gemini API Key:');
+        if (key) {
+          localStorage.setItem('gemini_api_key', key);
+          setHasApiKey(true);
+        }
+      }
+    } catch (error) {
+      console.error('Error selecting API key:', error);
+      // Fallback: prompt for API key
+      const key = prompt('Enter your Gemini API Key:');
+      if (key) {
+        localStorage.setItem('gemini_api_key', key);
+        setHasApiKey(true);
+      }
+    }
   };
 
   const onAnalysisComplete = (newRecord: EnvironmentalRecord) => {

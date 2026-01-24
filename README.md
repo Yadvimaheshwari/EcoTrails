@@ -18,3 +18,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/1MLlzlRcBKzi_rK7AE9hjBq
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+### Run Backend server
+
+.venv/bin/uvicorn backend:app --host 0.0.0.0 --port 8000 --reload

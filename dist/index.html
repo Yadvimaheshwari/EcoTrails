@@ -1,0 +1,63 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atlas // Nature's Journal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --paper: #F9F9F7;
+            --pine: #2D4739;
+            --mist: #E2E8DE;
+            --bark: #4A443F;
+            --stone: #8E8B82;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--paper);
+            color: var(--bark);
+            letter-spacing: -0.01em;
+            -webkit-font-smoothing: antialiased;
+        }
+        h1, h2, h3, .heading, .font-display {
+            font-family: 'Instrument Sans', sans-serif;
+            letter-spacing: -0.02em;
+        }
+        /* Typography Scale Utilities */
+        .text-display { font-size: 40px; line-height: 1.1; font-weight: 700; }
+        .text-h1 { font-size: 28px; line-height: 1.2; font-weight: 700; }
+        .text-h2 { font-size: 20px; line-height: 1.3; font-weight: 600; }
+        .text-body { font-size: 16px; line-height: 1.5; font-weight: 400; }
+        .text-caption { font-size: 12px; line-height: 1.4; font-weight: 500; color: var(--stone); }
+
+        .soft-card {
+            background: white;
+            border: 1px solid var(--mist);
+            border-radius: 24px;
+            box-shadow: 0 4px 24px -4px rgba(45, 71, 57, 0.04);
+        }
+        .btn-pine {
+            background-color: var(--pine);
+            color: white;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 18px;
+        }
+        .btn-pine:hover {
+            opacity: 0.95;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px -4px rgba(45, 71, 57, 0.2);
+        }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: var(--mist); border-radius: 10px; }
+    </style>
+  <script type="module" crossorigin src="/assets/index-DKQkjjsh.js"></script>
+</head>
+<body>
+    <div id="root"></div>
+</body>
+</html>
