@@ -37,6 +37,7 @@
     "@babel/plugin-proposal-optional-chaining": "npm:@babel/plugin-transform-optional-chaining@^7.28.6",
     "@babel/plugin-transform-nullish-coalescing-operator": "^7.28.6",
     "@babel/plugin-transform-optional-chaining": "^7.28.6",
+    "@babel/plugin-transform-template-literals": "^7.27.1",
     "@types/react": "~19.1.10",
     "babel-preset-expo": "^54.0.10",
     "typescript": "^5.1.3"
