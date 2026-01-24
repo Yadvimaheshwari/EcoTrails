@@ -389,10 +389,13 @@ async def ecodroid_websocket(
     await handle_ecodroid_stream(websocket, device_id, session_id, db)
 
 # Session Management
+class CreateSessionRequest(BaseModel):
+    park_name: str
+    device_id: Optional[str] = None
+
 @app.post("/api/v1/sessions")
 async def create_session(
-    park_name: str,
-    device_id: Optional[str] = None,
+    request: CreateSessionRequest,
     db: Session = Depends(get_db)
 ):
     """Create a new hike session"""
@@ -400,8 +403,8 @@ async def create_session(
     session = HikeSession(
         id=session_id,
         user_id="default_user",  # Should come from auth token
-        park_name=park_name,
-        device_id=device_id,
+        park_name=request.park_name,
+        device_id=request.device_id,
         status='active'
     )
     db.add(session)

@@ -36,9 +36,18 @@ const TrailSelectionScreen: React.FC = () => {
     setLoading(park.name);
     try {
       // Create session
-      const sessionResponse = await axios.post(`${API_BASE_URL}/api/v1/sessions`, {
-        park_name: park.name,
-      });
+      const sessionResponse = await axios.post(
+        `${API_BASE_URL}/api/v1/sessions`,
+        {
+          park_name: park.name,
+          device_id: 'ecodroid-001', // In production, get from device pairing
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
 
       const sessionId = sessionResponse.data.session_id;
 
