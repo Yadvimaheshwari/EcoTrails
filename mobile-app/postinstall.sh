@@ -13,12 +13,13 @@ cat > react-native-worklets/package.json << 'EOF'
 {
   "name": "react-native-worklets",
   "version": "1.0.0",
-  "main": "../react-native-worklets-core/lib/commonjs/index",
-  "plugin": "../react-native-worklets-core/plugin.js"
+  "main": "../react-native-worklets-core/lib/commonjs/index"
 }
 EOF
 
-# Create symlink to plugin
-ln -sf ../react-native-worklets-core/plugin.js react-native-worklets/plugin.js 2>/dev/null || true
+# Create plugin.js file that re-exports from core
+cat > react-native-worklets/plugin.js << 'EOF'
+module.exports = require('../react-native-worklets-core/plugin.js');
+EOF
 
 echo "Created react-native-worklets alias for react-native-worklets-core"
