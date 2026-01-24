@@ -1,8 +1,8 @@
 /**
  * Trail Selection Screen
- * Similar to AllTrails - shows available trails/parks
+ * Comprehensive US National and State Parks - One-stop shop for hikers
  */
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,37 +10,55 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
+  TextInput,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import axios from 'axios';
 import { API_BASE_URL } from '../config/api';
-
-interface Park {
-  name: string;
-  icon: string;
-  coords: string;
-}
-
-const PARKS: Park[] = [
-  { name: 'Sarek National Park', icon: '🏔️', coords: '67.3° N, 17.6° E' },
-  { name: 'Yosemite Valley', icon: '🌲', coords: '37.8° N, 119.5° W' },
-  { name: 'Lake District Peaks', icon: '⛰️', coords: '54.4° N, 3.1° W' },
-  { name: 'Blue Ridge Parkway', icon: '🌿', coords: '35.5° N, 82.5° W' },
-];
+import { US_PARKS, Park, getAllStates, searchParks, getParksByState, getParksByType } from '../data/parks';
 
 const TrailSelectionScreen: React.FC = () => {
   const navigation = useNavigation();
   const [loading, setLoading] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedState, setSelectedState] = useState<string | null>(null);
+  const [selectedType, setSelectedType] = useState<Park['type'] | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Filter parks based on search, state, and type
+  const filteredParks = useMemo(() => {
+    let parks = US_PARKS;
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      parks = searchParks(searchQuery);
+    }
+
+    // Apply state filter
+    if (selectedState) {
+      parks = parks.filter(park =>
+        park.state === selectedState || (park.states && park.states.includes(selectedState))
+      );
+    }
+
+    // Apply type filter
+    if (selectedType) {
+      parks = parks.filter(park => park.type === selectedType);
+    }
+
+    return parks;
+  }, [searchQuery, selectedState, selectedType]);
 
   const handleSelectPark = async (park: Park) => {
-    setLoading(park.name);
+    setLoading(park.id);
     try {
-      // Create session
+      // Create session - device_id is optional (for future EcoDroid integration)
       const sessionResponse = await axios.post(
         `${API_BASE_URL}/api/v1/sessions`,
         {
           park_name: park.name,
-          device_id: 'ecodroid-001', // In production, get from device pairing
+          // device_id is optional - will be null if no device
         },
         {
           headers: {
@@ -55,49 +73,157 @@ const TrailSelectionScreen: React.FC = () => {
       navigation.navigate('ActiveHike', {
         sessionId,
         parkName: park.name,
-        deviceId: 'ecodroid-001', // In production, get from device pairing
+        deviceId: null, // No EcoDroid device yet - app works without it
       });
     } catch (error: any) {
       console.error('Error creating session:', error);
-      // Show user-friendly error message
       const errorMessage = error.response?.data?.detail || error.message || 'Failed to start hike. Please check your connection.';
-      // In production, use Alert.alert() here
-      console.warn('Session creation failed:', errorMessage);
+      Alert.alert('Error', errorMessage);
     } finally {
       setLoading(null);
     }
   };
 
+  const clearFilters = () => {
+    setSearchQuery('');
+    setSelectedState(null);
+    setSelectedType(null);
+  };
+
+  const states = getAllStates();
+  const parkTypes: Park['type'][] = ['National Park', 'National Forest', 'State Park', 'National Monument', 'National Recreation Area', 'Wilderness Area'];
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Choose Your Trail</Text>
-        <Text style={styles.subtitle}>Select a park to begin your journey</Text>
+        <Text style={styles.title}>US Parks & Forests</Text>
+        <Text style={styles.subtitle}>{filteredParks.length} parks available</Text>
       </View>
 
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search parks, states, or features..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholderTextColor="#8E8B82"
+        />
+        <TouchableOpacity
+          style={styles.filterButton}
+          onPress={() => setShowFilters(!showFilters)}
+        >
+          <Text style={styles.filterButtonText}>🔍 Filters</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Filters */}
+      {showFilters && (
+        <View style={styles.filtersContainer}>
+          {/* State Filter */}
+          <View style={styles.filterSection}>
+            <Text style={styles.filterLabel}>State:</Text>
+            <FlatList
+              horizontal
+              data={['All', ...states]}
+              keyExtractor={(item) => item}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    selectedState === item || (item === 'All' && !selectedState) ? styles.filterChipActive : null
+                  ]}
+                  onPress={() => setSelectedState(item === 'All' ? null : item)}
+                >
+                  <Text style={[
+                    styles.filterChipText,
+                    selectedState === item || (item === 'All' && !selectedState) ? styles.filterChipTextActive : null
+                  ]}>
+                    {item}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              showsHorizontalScrollIndicator={false}
+            />
+          </View>
+
+          {/* Type Filter */}
+          <View style={styles.filterSection}>
+            <Text style={styles.filterLabel}>Type:</Text>
+            <FlatList
+              horizontal
+              data={['All', ...parkTypes]}
+              keyExtractor={(item) => item}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    selectedType === item || (item === 'All' && !selectedType) ? styles.filterChipActive : null
+                  ]}
+                  onPress={() => setSelectedType(item === 'All' ? null : item as Park['type'])}
+                >
+                  <Text style={[
+                    styles.filterChipText,
+                    selectedType === item || (item === 'All' && !selectedType) ? styles.filterChipTextActive : null
+                  ]}>
+                    {item}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              showsHorizontalScrollIndicator={false}
+            />
+          </View>
+
+          {(selectedState || selectedType || searchQuery) && (
+            <TouchableOpacity style={styles.clearFiltersButton} onPress={clearFilters}>
+              <Text style={styles.clearFiltersText}>Clear All Filters</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* Parks List */}
       <FlatList
-        data={PARKS}
-        keyExtractor={(item) => item.name}
+        data={filteredParks}
+        keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.parkCard}
             onPress={() => handleSelectPark(item)}
             disabled={!!loading}
           >
-            {loading === item.name && (
+            {loading === item.id && (
               <View style={styles.loadingOverlay}>
                 <ActivityIndicator size="large" color="#2D4739" />
               </View>
             )}
             <Text style={styles.parkIcon}>{item.icon}</Text>
             <View style={styles.parkInfo}>
-              <Text style={styles.parkName}>{item.name}</Text>
-              <Text style={styles.parkCoords}>{item.coords}</Text>
+              <View style={styles.parkHeader}>
+                <Text style={styles.parkName}>{item.name}</Text>
+                <Text style={styles.parkType}>{item.type}</Text>
+              </View>
+              <Text style={styles.parkLocation}>{item.state}{item.states && item.states.length > 1 ? `, ${item.states.filter(s => s !== item.state).join(', ')}` : ''}</Text>
+              {item.features && item.features.length > 0 && (
+                <View style={styles.featuresContainer}>
+                  {item.features.slice(0, 3).map((feature, idx) => (
+                    <View key={idx} style={styles.featureTag}>
+                      <Text style={styles.featureText}>{feature}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
             <Text style={styles.arrow}>→</Text>
           </TouchableOpacity>
         )}
         contentContainerStyle={styles.listContent}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No parks found</Text>
+            <Text style={styles.emptySubtext}>Try adjusting your filters</Text>
+          </View>
+        }
       />
     </View>
   );
@@ -116,11 +242,85 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: 'bold',
     color: '#2D4739',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   subtitle: {
     fontSize: 16,
     color: '#8E8B82',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 16,
+    color: '#2D4739',
+    borderWidth: 1,
+    borderColor: '#E2E8DE',
+  },
+  filterButton: {
+    backgroundColor: '#2D4739',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    justifyContent: 'center',
+  },
+  filterButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  filtersContainer: {
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8DE',
+  },
+  filterSection: {
+    marginBottom: 12,
+  },
+  filterLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2D4739',
+    marginBottom: 8,
+  },
+  filterChip: {
+    backgroundColor: '#F9F9F7',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8DE',
+  },
+  filterChipActive: {
+    backgroundColor: '#2D4739',
+    borderColor: '#2D4739',
+  },
+  filterChipText: {
+    fontSize: 12,
+    color: '#8E8B82',
+    fontWeight: '500',
+  },
+  filterChipTextActive: {
+    color: '#FFFFFF',
+  },
+  clearFiltersButton: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+  },
+  clearFiltersText: {
+    color: '#2D4739',
+    fontSize: 14,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
   listContent: {
     padding: 20,
@@ -128,7 +328,7 @@ const styles = StyleSheet.create({
   parkCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 20,
+    padding: 16,
     marginBottom: 16,
     flexDirection: 'row',
     alignItems: 'center',
@@ -139,26 +339,58 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   parkIcon: {
-    fontSize: 48,
-    marginRight: 16,
+    fontSize: 40,
+    marginRight: 12,
   },
   parkInfo: {
     flex: 1,
   },
+  parkHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    flexWrap: 'wrap',
+  },
   parkName: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '600',
     color: '#2D4739',
-    marginBottom: 4,
+    marginRight: 8,
   },
-  parkCoords: {
+  parkType: {
+    fontSize: 11,
+    color: '#8E8B82',
+    backgroundColor: '#F9F9F7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    textTransform: 'uppercase',
+  },
+  parkLocation: {
     fontSize: 14,
     color: '#8E8B82',
+    marginBottom: 8,
+  },
+  featuresContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  featureTag: {
+    backgroundColor: '#E2E8DE',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  featureText: {
+    fontSize: 11,
+    color: '#2D4739',
   },
   arrow: {
     fontSize: 24,
     color: '#2D4739',
     opacity: 0.3,
+    marginLeft: 8,
   },
   loadingOverlay: {
     position: 'absolute',
@@ -170,6 +402,20 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#2D4739',
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#8E8B82',
   },
 });
 

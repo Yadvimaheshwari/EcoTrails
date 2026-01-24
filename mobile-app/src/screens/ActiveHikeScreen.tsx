@@ -14,6 +14,8 @@ import {
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import EcoDroidService from '../services/EcoDroidService';
 import WearableService from '../services/WearableService';
+import GeminiCompanionService, { CompanionMessage } from '../services/GeminiCompanionService';
+import CompanionChat from '../components/CompanionChat';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
 interface Observation {
@@ -34,13 +36,13 @@ const ActiveHikeScreen: React.FC = () => {
   type RouteParams = {
     sessionId: string;
     parkName: string;
-    deviceId: string;
+    deviceId: string | null; // Optional - EcoDroid device not required
   };
   const params = (route.params || {}) as RouteParams;
   const { sessionId, parkName, deviceId } = params;
   
-  // Safety check - if params are missing, show error
-  if (!sessionId || !parkName || !deviceId) {
+  // Safety check - sessionId and parkName are required, deviceId is optional
+  if (!sessionId || !parkName) {
     return (
       <View style={styles.container}>
         <Text style={styles.errorText}>Missing required parameters</Text>
@@ -52,21 +54,67 @@ const ActiveHikeScreen: React.FC = () => {
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [routePath, setRoutePath] = useState<Array<{ latitude: number; longitude: number }>>([]);
   const [isMinimalMode, setIsMinimalMode] = useState(true);
+  const [showCompanionChat, setShowCompanionChat] = useState(false);
+  const [companionInsights, setCompanionInsights] = useState<CompanionMessage[]>([]);
+  const [proactiveSuggestion, setProactiveSuggestion] = useState<CompanionMessage | null>(null);
   const mapRef = useRef<MapView>(null);
+
+  // Helper function to get current season
+  const getSeason = (): string => {
+    const month = new Date().getMonth();
+    if (month >= 2 && month <= 4) return 'spring';
+    if (month >= 5 && month <= 7) return 'summer';
+    if (month >= 8 && month <= 10) return 'fall';
+    return 'winter';
+  };
 
   useEffect(() => {
     // Initialize services
     const initServices = async () => {
       await WearableService.initialize();
       
-      // Connect to EcoDroid device
+      // Initialize Gemini Companion (context will be updated when location is available)
+      GeminiCompanionService.setContext({
+        parkName,
+        location: currentLocation || undefined,
+        timeOfDay: new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening',
+        season: getSeason(),
+      });
+
+      // Get initial park info (async, don't block)
+      GeminiCompanionService.getParkInfo(parkName).then((parkInfo) => {
+        const welcomeMessage: CompanionMessage = {
+          id: 'welcome',
+          type: 'conversation',
+          content: parkInfo,
+          timestamp: Date.now(),
+          priority: 'low',
+        };
+        setCompanionInsights([welcomeMessage]);
+      }).catch((error) => {
+        console.error('Error loading park info:', error);
+      });
+
+      // Connect to EcoDroid device (optional - app works without it)
       if (deviceId && sessionId) {
         try {
           await EcoDroidService.connect(deviceId, sessionId);
           
           // Set up observation callback
-          EcoDroidService.onObservation((observation) => {
+          EcoDroidService.onObservation(async (observation) => {
             setObservations((prev) => [observation, ...prev]);
+            
+            // Get intelligent insight from Gemini companion
+            try {
+              const insight = await GeminiCompanionService.getRealTimeInsight(
+                observation.observation || 'Current surroundings',
+                observation.location,
+                observation.image
+              );
+              setCompanionInsights((prev) => [insight, ...prev].slice(0, 10)); // Keep last 10
+            } catch (error) {
+              console.error('Error getting companion insight:', error);
+            }
             
             // Send to wearable if significant
             if (observation.confidence === 'High') {
@@ -78,19 +126,66 @@ const ActiveHikeScreen: React.FC = () => {
             }
           });
         } catch (error: any) {
-          console.error('EcoDroid connection error:', error);
-          Alert.alert(
-            'Connection Error',
-            'Failed to connect to EcoDroid device. The app will continue in demo mode.',
-            [{ text: 'OK' }]
-          );
+          console.warn('EcoDroid device not available. App will work in manual mode.');
+          // Don't show alert - device is optional
         }
+      } else {
+        console.log('No EcoDroid device connected. App running in manual mode.');
       }
     };
 
     initServices();
 
-    // Start location tracking
+    // Get proactive suggestions periodically
+    const suggestionInterval = setInterval(async () => {
+      try {
+        const suggestion = await GeminiCompanionService.getProactiveSuggestion();
+        if (suggestion) {
+          setProactiveSuggestion(suggestion);
+          // Auto-dismiss after 10 seconds
+          setTimeout(() => setProactiveSuggestion(null), 10000);
+        }
+      } catch (error) {
+        console.error('Error getting suggestion:', error);
+      }
+    }, 60000); // Every minute
+
+    // Check safety conditions periodically
+    const safetyInterval = setInterval(async () => {
+      try {
+        const safetyAlert = await GeminiCompanionService.checkSafetyConditions();
+        if (safetyAlert) {
+          setCompanionInsights((prev) => [safetyAlert, ...prev].slice(0, 10));
+          Alert.alert('Safety Alert', safetyAlert.content);
+        }
+      } catch (error) {
+        console.error('Error checking safety:', error);
+      }
+    }, 300000); // Every 5 minutes
+
+    return () => {
+      clearInterval(suggestionInterval);
+      clearInterval(safetyInterval);
+      if (deviceId) {
+        EcoDroidService.endSession();
+      }
+    };
+  }, [deviceId, sessionId, parkName]);
+
+  // Update companion context when location changes
+  useEffect(() => {
+    if (currentLocation) {
+      GeminiCompanionService.setContext({
+        parkName,
+        location: currentLocation,
+        timeOfDay: new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening',
+        season: getSeason(),
+      });
+    }
+  }, [currentLocation, parkName]);
+
+  // Start location tracking
+  useEffect(() => {
     const locationInterval = setInterval(() => {
       // In production, use expo-location
       // For now, simulate location updates
@@ -114,9 +209,8 @@ const ActiveHikeScreen: React.FC = () => {
 
     return () => {
       clearInterval(locationInterval);
-      EcoDroidService.endSession();
     };
-  }, [deviceId, sessionId]);
+  }, []);
 
   const handleEndHike = () => {
     Alert.alert(
@@ -170,6 +264,25 @@ const ActiveHikeScreen: React.FC = () => {
           ))}
       </MapView>
 
+      {/* Companion Insights Overlay */}
+      {companionInsights.length > 0 && companionInsights[0].type !== 'alert' && (
+        <View style={styles.companionInsight}>
+          <Text style={styles.companionInsightText} numberOfLines={3}>
+            💡 {companionInsights[0].content}
+          </Text>
+        </View>
+      )}
+
+      {/* Proactive Suggestion */}
+      {proactiveSuggestion && (
+        <View style={styles.suggestionCard}>
+          <Text style={styles.suggestionText}>💬 {proactiveSuggestion.content}</Text>
+          <TouchableOpacity onPress={() => setProactiveSuggestion(null)} style={styles.dismissButton}>
+            <Text style={styles.dismissText}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Minimal UI Overlay */}
       {isMinimalMode ? (
         <View style={styles.minimalOverlay}>
@@ -208,6 +321,25 @@ const ActiveHikeScreen: React.FC = () => {
           {isMinimalMode ? 'Expand' : 'Minimize'}
         </Text>
       </TouchableOpacity>
+
+      {/* Companion Chat Button */}
+      <TouchableOpacity
+        style={styles.companionButton}
+        onPress={() => setShowCompanionChat(true)}
+      >
+        <Text style={styles.companionButtonText}>🤖 Ask Atlas</Text>
+      </TouchableOpacity>
+
+      {/* Companion Chat Modal */}
+      {showCompanionChat && (
+        <View style={styles.chatModal}>
+          <CompanionChat
+            parkName={parkName}
+            location={currentLocation || undefined}
+            onClose={() => setShowCompanionChat(false)}
+          />
+        </View>
+      )}
     </View>
   );
 };
@@ -311,6 +443,86 @@ const styles = StyleSheet.create({
     color: '#DC2626',
     textAlign: 'center',
     marginTop: 50,
+  },
+  companionInsight: {
+    position: 'absolute',
+    top: 120,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(45, 71, 57, 0.95)',
+    borderRadius: 12,
+    padding: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  companionInsightText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  suggestionCard: {
+    position: 'absolute',
+    bottom: 180,
+    left: 20,
+    right: 20,
+    backgroundColor: '#E2E8DE',
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  suggestionText: {
+    flex: 1,
+    color: '#2D4739',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  dismissButton: {
+    marginLeft: 8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(45, 71, 57, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dismissText: {
+    color: '#2D4739',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  companionButton: {
+    position: 'absolute',
+    bottom: 100,
+    right: 20,
+    backgroundColor: '#2D4739',
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  companionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  chatModal: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#F9F9F7',
+    zIndex: 1000,
   },
 });
 

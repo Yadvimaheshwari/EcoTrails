@@ -333,6 +333,11 @@ NARRATIVE_SCHEMA = {
 app = FastAPI(title="EcoAtlas API", version="2.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+# Root endpoint
+@app.get("/")
+async def root():
+    return {"message": "EcoAtlas API", "version": "2.0.0", "status": "running"}
+
 # Initialize database on startup
 @app.on_event("startup")
 async def startup_event():
@@ -594,6 +599,437 @@ async def get_session_record(session_id: str, db: Session = Depends(get_db)):
         "visual_artifact": record.visual_artifact,
         "experience_synthesis": record.experience_synthesis
     }
+
+# ============================================
+# Gemini AI Companion Endpoints
+# Intelligent hiking companion that knows everything
+# ============================================
+
+COMPANION_SYSTEM_INSTRUCTION = (
+    "You are an intelligent hiking companion named Atlas. You are a knowledgeable, friendly, and helpful guide "
+    "who knows everything about nature, parks, trails, wildlife, geology, botany, and outdoor safety. "
+    "You help hikers understand their surroundings, stay safe, and appreciate the natural world. "
+    "You speak in a calm, conversational tone. You are curious, observant, and share fascinating insights. "
+    "You notice details others might miss. You connect observations to broader ecological patterns. "
+    "You are proactive - you offer helpful suggestions without being asked. You prioritize safety. "
+    "You make nature accessible and interesting. You help people feel more connected to the places they explore."
+)
+
+class CompanionRequest(BaseModel):
+    observation: Optional[str] = None
+    location: Optional[Dict[str, float]] = None
+    image: Optional[str] = None
+    context: Optional[Dict[str, Any]] = None
+
+class CompanionQuestionRequest(BaseModel):
+    question: str
+    context: Optional[Dict[str, Any]] = None
+    conversationHistory: Optional[List[Dict[str, Any]]] = None
+
+class CompanionSuggestionRequest(BaseModel):
+    context: Dict[str, Any]
+    conversationHistory: Optional[List[Dict[str, Any]]] = None
+
+@app.post("/api/v1/companion/insight")
+async def get_companion_insight(request: CompanionRequest):
+    """Get intelligent real-time insight about an observation"""
+    try:
+        from backend.agents import EcoAtlasAgents
+        from backend.companion_fallbacks import get_fallback_insight
+        
+        api_key = os.environ.get("API_KEY")
+        park_name = request.context.get("parkName", "this area") if request.context else "this area"
+        
+        if api_key:
+            try:
+                agents = EcoAtlasAgents(api_key=api_key)
+                
+                # Build context string
+                context_str = ""
+                if request.context:
+                    context_str += f"Location: {park_name}. "
+                    if request.context.get("location"):
+                        loc = request.context["location"]
+                        context_str += f"Coordinates: {loc.get('lat')}, {loc.get('lng')}. "
+                    if request.context.get("timeOfDay"):
+                        context_str += f"Time: {request.context['timeOfDay']}. "
+                    if request.context.get("season"):
+                        context_str += f"Season: {request.context['season']}. "
+                
+                # Prepare media if image provided
+                media_parts = []
+                if request.image:
+                    media_parts.append(types.Part.from_bytes(
+                        data=base64.b64decode(request.image),
+                        mime_type="image/jpeg"
+                    ))
+                
+                # Use Observer agent for visual insights, or Bard for general insights
+                task = f"Provide a brief, insightful observation about: {request.observation or 'the current surroundings'}. "
+                task += "Be specific, interesting, and help the hiker understand what they're seeing. "
+                task += "Connect it to the broader ecosystem if relevant. Keep it conversational and engaging."
+                
+                if request.image:
+                    insight = await agents.observer.execute(task, context_str, media_parts)
+                else:
+                    insight = await agents.bard.execute(task, context_str)
+                
+                # Determine priority and category
+                priority = "medium"
+                category = None
+                if any(word in insight.lower() for word in ["danger", "safety", "warning", "caution", "unsafe"]):
+                    priority = "high"
+                    category = "safety"
+                elif any(word in insight.lower() for word in ["animal", "wildlife", "bird", "mammal"]):
+                    category = "wildlife"
+                elif any(word in insight.lower() for word in ["rock", "geology", "formation", "mineral"]):
+                    category = "geology"
+                elif any(word in insight.lower() for word in ["plant", "tree", "flower", "vegetation", "botany"]):
+                    category = "botany"
+                
+                return {
+                    "insight": insight,
+                    "priority": priority,
+                    "category": category,
+                    "metadata": {
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "location": request.location
+                    }
+                }
+            except Exception as api_error:
+                error_str = str(api_error)
+                if "403" in error_str or "PERMISSION_DENIED" in error_str or "API key" in error_str.lower():
+                    logger.warning(f"API key issue, using fallback insight")
+                    fallback_insight = get_fallback_insight(request.observation, park_name)
+                    return {
+                        "insight": fallback_insight,
+                        "priority": "medium",
+                        "category": None,
+                        "metadata": {
+                            "timestamp": datetime.utcnow().isoformat(),
+                            "location": request.location
+                        }
+                    }
+                raise
+        else:
+            # No API key, use fallback
+            fallback_insight = get_fallback_insight(request.observation, park_name)
+            return {
+                "insight": fallback_insight,
+                "priority": "medium",
+                "category": None,
+                "metadata": {
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "location": request.location
+                }
+            }
+    except Exception as e:
+        logger.error(f"Companion insight error: {str(e)}")
+        # Always return fallback instead of error
+        from backend.companion_fallbacks import get_fallback_insight
+        park_name = request.context.get("parkName", "this area") if request.context else "this area"
+        fallback_insight = get_fallback_insight(request.observation, park_name)
+        return {
+            "insight": fallback_insight,
+            "priority": "medium",
+            "category": None,
+            "metadata": {
+                "timestamp": datetime.utcnow().isoformat(),
+                "location": request.location
+            }
+        }
+
+@app.post("/api/v1/companion/ask")
+async def ask_companion(request: CompanionQuestionRequest):
+    """Ask the companion a question"""
+    try:
+        from backend.agents import EcoAtlasAgents
+        from backend.companion_fallbacks import get_fallback_answer
+        
+        api_key = os.environ.get("API_KEY")
+        park_name = request.context.get("parkName", "this area") if request.context else "this area"
+        
+        if api_key:
+            try:
+                agents = EcoAtlasAgents(api_key=api_key)
+                
+                # Build context
+                context_str = ""
+                if request.context:
+                    context_str += f"We are in {park_name}. "
+                    if request.context.get("location"):
+                        loc = request.context["location"]
+                        context_str += f"Current location: {loc.get('lat')}, {loc.get('lng')}. "
+                
+                # Include conversation history
+                if request.conversationHistory:
+                    recent_context = "\n".join([
+                        f"Previous: {msg.get('content', '')[:100]}" 
+                        for msg in request.conversationHistory[-3:]
+                    ])
+                    context_str += f"\nRecent conversation:\n{recent_context}\n"
+                
+                task = f"Answer this question from a hiker: {request.question}\n\n"
+                task += "Be helpful, accurate, and engaging. If you don't know something, say so. "
+                task += "Connect your answer to the current location and context when relevant."
+                
+                answer = await agents.bard.execute(
+                    task,
+                    context_str,
+                    response_schema=None
+                )
+                
+                return {"answer": answer}
+            except Exception as api_error:
+                error_str = str(api_error)
+                if "403" in error_str or "PERMISSION_DENIED" in error_str or "API key" in error_str.lower():
+                    logger.warning(f"API key issue, using fallback answer")
+                    return {"answer": get_fallback_answer(request.question, park_name)}
+                raise
+        else:
+            # No API key, use fallback
+            return {"answer": get_fallback_answer(request.question, park_name)}
+    except Exception as e:
+        logger.error(f"Companion ask error: {str(e)}")
+        # Always return fallback instead of error
+        from backend.companion_fallbacks import get_fallback_answer
+        park_name = request.context.get("parkName", "this area") if request.context else "this area"
+        return {"answer": get_fallback_answer(request.question, park_name)}
+
+@app.post("/api/v1/companion/suggest")
+async def get_companion_suggestion(request: CompanionSuggestionRequest):
+    """Get proactive suggestion from companion"""
+    try:
+        from backend.agents import EcoAtlasAgents
+        from backend.companion_fallbacks import get_fallback_suggestion
+        
+        api_key = os.environ.get("API_KEY")
+        context = request.context
+        park_name = context.get("parkName", "this area")
+        
+        if api_key:
+            try:
+                agents = EcoAtlasAgents(api_key=api_key)
+                
+                time_of_day = context.get("timeOfDay", "daytime")
+                season = context.get("season", "current season")
+                
+                context_str = f"We are hiking in {park_name} during {time_of_day} in {season}. "
+                if context.get("location"):
+                    loc = context["location"]
+                    context_str += f"Location: {loc.get('lat')}, {loc.get('lng')}. "
+                if context.get("weather"):
+                    context_str += f"Weather: {context['weather']}. "
+                if context.get("recentObservations"):
+                    context_str += f"Recent observations: {', '.join([str(o)[:50] for o in context['recentObservations'][:3]])}. "
+                
+                task = "Provide a helpful, proactive suggestion for the hiker. "
+                task += "This could be about: what to look for, safety tips, interesting features nearby, "
+                task += "best times to see wildlife, trail conditions, or anything else that would enhance their experience. "
+                task += "Be specific and relevant to the current context. Keep it brief (1-2 sentences). "
+                task += "Only suggest if you have something genuinely useful to say."
+                
+                suggestion = await agents.bard.execute(task, context_str)
+                
+                # Only return if suggestion is meaningful
+                if len(suggestion.strip()) > 20:
+                    priority = "low"
+                    category = None
+                    if any(word in suggestion.lower() for word in ["safety", "danger", "caution", "warning"]):
+                        priority = "medium"
+                        category = "safety"
+                    
+                    return {
+                        "suggestion": suggestion,
+                        "priority": priority,
+                        "category": category
+                    }
+            except Exception as api_error:
+                error_str = str(api_error)
+                if "403" in error_str or "PERMISSION_DENIED" in error_str or "API key" in error_str.lower():
+                    logger.warning(f"API key issue, using fallback suggestion")
+                    fallback = get_fallback_suggestion(context)
+                    if fallback:
+                        return {
+                            "suggestion": fallback,
+                            "priority": "low",
+                            "category": None
+                        }
+        
+        # Use fallback
+        fallback = get_fallback_suggestion(context)
+        if fallback:
+            return {
+                "suggestion": fallback,
+                "priority": "low",
+                "category": None
+            }
+        
+        return {"suggestion": None}
+    except Exception as e:
+        logger.error(f"Companion suggestion error: {str(e)}")
+        # Try fallback
+        try:
+            from backend.companion_fallbacks import get_fallback_suggestion
+            fallback = get_fallback_suggestion(request.context)
+            if fallback:
+                return {
+                    "suggestion": fallback,
+                    "priority": "low",
+                    "category": None
+                }
+        except:
+            pass
+        return {"suggestion": None}
+
+@app.post("/api/v1/companion/educate")
+async def get_educational_info(request: Dict[str, Any]):
+    """Get educational information about a topic"""
+    try:
+        from backend.agents import EcoAtlasAgents
+        from backend.companion_fallbacks import get_fallback_answer
+        
+        api_key = os.environ.get("API_KEY")
+        topic = request.get("topic", "")
+        category = request.get("category", "general")
+        context = request.get("context", {})
+        park_name = context.get("parkName", "this area")
+        
+        if api_key:
+            try:
+                agents = EcoAtlasAgents(api_key=api_key)
+                
+                context_str = f"We are in {park_name}. "
+                
+                task = f"Provide educational information about: {topic} "
+                task += f"(category: {category}). "
+                task += "Make it interesting and accessible. Explain why it matters in this ecosystem. "
+                task += "Keep it engaging but informative (2-3 sentences)."
+                
+                info = await agents.bard.execute(task, context_str)
+                
+                return {"info": info}
+            except Exception as api_error:
+                error_str = str(api_error)
+                if "403" in error_str or "PERMISSION_DENIED" in error_str or "API key" in error_str.lower():
+                    logger.warning(f"API key issue, using fallback educational info")
+                    return {"info": get_fallback_answer(f"Tell me about {topic}", park_name)}
+                raise
+        else:
+            # No API key, use fallback
+            return {"info": get_fallback_answer(f"Tell me about {topic}", park_name)}
+    except Exception as e:
+        logger.error(f"Companion educate error: {str(e)}")
+        # Always return fallback instead of error
+        from backend.companion_fallbacks import get_fallback_answer
+        topic = request.get("topic", "")
+        park_name = request.get("context", {}).get("parkName", "this area")
+        return {"info": get_fallback_answer(f"Tell me about {topic}", park_name)}
+
+@app.post("/api/v1/companion/safety")
+async def check_safety(request: Dict[str, Any]):
+    """Check safety conditions and provide alerts"""
+    try:
+        from backend.agents import EcoAtlasAgents
+        from backend.companion_fallbacks import get_fallback_safety_alert
+        
+        api_key = os.environ.get("API_KEY")
+        context = request.get("context", {})
+        park_name = context.get("parkName", "this area")
+        
+        if api_key:
+            try:
+                agents = EcoAtlasAgents(api_key=api_key)
+                
+                weather = context.get("weather", {})
+                location = context.get("location", {})
+                time_of_day = context.get("timeOfDay", "daytime")
+                
+                context_str = f"Location: {park_name}. Time: {time_of_day}. "
+                if weather:
+                    context_str += f"Weather conditions: {weather}. "
+                if location:
+                    context_str += f"Coordinates: {location.get('lat')}, {location.get('lng')}. "
+                
+                task = "Assess current safety conditions for hiking. "
+                task += "Look for: weather hazards, trail conditions, wildlife activity, time-of-day concerns, "
+                task += "or any other safety factors relevant to this location and context. "
+                task += "Only provide an alert if there is a genuine safety concern. "
+                task += "If conditions are safe, return null. If there's a concern, provide a clear, actionable alert."
+                
+                alert = await agents.bard.execute(task, context_str)
+                
+                if alert and len(alert.strip()) > 10 and "null" not in alert.lower() and "no concern" not in alert.lower():
+                    priority = "high" if any(word in alert.lower() for word in ["danger", "immediate", "urgent", "severe"]) else "medium"
+                    return {
+                        "alert": alert,
+                        "priority": priority
+                    }
+            except Exception as api_error:
+                error_str = str(api_error)
+                if "403" in error_str or "PERMISSION_DENIED" in error_str or "API key" in error_str.lower():
+                    logger.warning(f"API key issue, using fallback safety check")
+                    fallback_alert = get_fallback_safety_alert(context)
+                    if fallback_alert:
+                        return {"alert": fallback_alert, "priority": "medium"}
+        
+        # Use fallback
+        fallback_alert = get_fallback_safety_alert(context)
+        if fallback_alert:
+            return {"alert": fallback_alert, "priority": "medium"}
+        
+        return {"alert": None}
+    except Exception as e:
+        logger.error(f"Companion safety error: {str(e)}")
+        # Try fallback
+        try:
+            from backend.companion_fallbacks import get_fallback_safety_alert
+            fallback_alert = get_fallback_safety_alert(request.get("context", {}))
+            if fallback_alert:
+                return {"alert": fallback_alert, "priority": "medium"}
+        except:
+            pass
+        return {"alert": None}
+
+@app.post("/api/v1/companion/park-info")
+async def get_park_info(request: Dict[str, Any]):
+    """Get comprehensive information about a park"""
+    try:
+        from backend.agents import EcoAtlasAgents
+        from backend.companion_fallbacks import get_fallback_park_info
+        
+        park_name = request.get("parkName", "")
+        api_key = os.environ.get("API_KEY")
+        
+        if api_key:
+            try:
+                agents = EcoAtlasAgents(api_key=api_key)
+                
+                task = f"Provide a warm, welcoming introduction to {park_name}. "
+                task += "Include: what makes this park special, key features, notable wildlife or geology, "
+                task += "best times to visit, and what hikers should know. "
+                task += "Make it engaging and informative (3-4 sentences). "
+                task += "Speak as a knowledgeable companion who loves this place."
+                
+                info = await agents.bard.execute(task, f"Park: {park_name}")
+                
+                return {"info": info}
+            except Exception as api_error:
+                error_str = str(api_error)
+                # Check if it's an API key error
+                if "403" in error_str or "PERMISSION_DENIED" in error_str or "API key" in error_str.lower():
+                    logger.warning(f"API key issue, using fallback for {park_name}")
+                    return {"info": get_fallback_park_info(park_name)}
+                raise
+        else:
+            # No API key, use fallback
+            return {"info": get_fallback_park_info(park_name)}
+    except Exception as e:
+        logger.error(f"Companion park-info error: {str(e)}")
+        # Always return fallback instead of error
+        from backend.companion_fallbacks import get_fallback_park_info
+        park_name = request.get("parkName", "this park")
+        return {"info": get_fallback_park_info(park_name)}
 
 if __name__ == "__main__":
     import uvicorn
