@@ -14,6 +14,11 @@
     "assetBundlePatterns": [
       "**/*"
     ],
+    "extra": {
+      "eas": {
+        "projectId": "ecoatlas-mobile"
+      }
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ecoatlas.mobile"
