@@ -6,12 +6,11 @@ const config = getDefaultConfig(__dirname);
 // Aggressively exclude node_modules from watching
 config.watchFolders = [__dirname];
 config.resolver.blockList = [
-  /node_modules\/.*\/node_modules\/.*/,
+  /node_modules\/.*\/node_modules\/react-native\/.*/,
   /\.git\/.*/,
   /\.expo\/.*/,
   /\.metro\/.*/,
   /dist\/.*/,
-  /build\/.*/,
 ];
 
 // Optimize watcher - use Watchman if available, otherwise reduce file watching
@@ -26,12 +25,11 @@ config.watcher = {
   // Reduce polling interval and exclude patterns
   additionalExts: ['cjs', 'mjs'],
   ignore: [
-    /node_modules\/.*/,
+    /node_modules\/.*\/node_modules\/.*/,
     /\.git\/.*/,
     /\.expo\/.*/,
     /\.metro\/.*/,
     /dist\/.*/,
-    /build\/.*/,
   ],
 };
 
