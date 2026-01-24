@@ -3,7 +3,7 @@
  * Handles WebSocket communication with EcoDroid Mini hardware
  */
 // React Native has WebSocket built-in, no import needed
-import { getWebSocketUrl } from '../config/api';
+import { API_BASE_URL, getWebSocketUrl } from '../config/api';
 
 export interface EcoDroidDevice {
   deviceId: string;
@@ -37,7 +37,7 @@ class EcoDroidService {
   private onObservationCallback?: (observation: any) => void;
   private onErrorCallback?: (error: Error) => void;
 
-  constructor(apiBaseUrl: string = 'http://localhost:8000') {
+  constructor(apiBaseUrl: string = API_BASE_URL) {
     this.apiBaseUrl = getWebSocketUrl(apiBaseUrl);
   }
 

@@ -552,6 +552,49 @@ async def get_session_context(session_id: str):
     context = realtime_processor.get_session_context(session_id)
     return context
 
+@app.get("/api/v1/sessions/{session_id}/record")
+async def get_session_record(session_id: str, db: Session = Depends(get_db)):
+    """Get environmental record for a completed session"""
+    session = db.query(HikeSession).filter(HikeSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Get the environmental record if it exists
+    record = db.query(EnvironmentalRecord).filter(
+        EnvironmentalRecord.session_id == session_id
+    ).first()
+    
+    if not record:
+        # Return session data as fallback
+        return {
+            "park_name": session.park_name,
+            "timestamp": session.start_time.isoformat() if session.start_time else None,
+            "status": session.status,
+            "summary": "Environmental record not yet generated",
+            "tags": [],
+            "multimodal_evidence": []
+        }
+    
+    # Convert record to dict
+    return {
+        "id": record.id,
+        "park_name": record.park_name,
+        "timestamp": record.timestamp.isoformat() if record.timestamp else None,
+        "location": record.location,
+        "confidence": record.confidence,
+        "summary": record.summary,
+        "multimodal_evidence": record.multimodal_evidence or [],
+        "tags": record.tags or [],
+        "observation_events": record.observation_events,
+        "acoustic_analysis": record.acoustic_analysis,
+        "fusion_analysis": record.fusion_analysis,
+        "field_narrative": record.field_narrative,
+        "spatial_insight": record.spatial_insight,
+        "temporal_delta": record.temporal_delta,
+        "visual_artifact": record.visual_artifact,
+        "experience_synthesis": record.experience_synthesis
+    }
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
