@@ -3,6 +3,8 @@ module.exports = function(api) {
   return {
     presets: ['babel-preset-expo'],
     plugins: [
+      '@babel/plugin-transform-optional-chaining',
+      '@babel/plugin-transform-nullish-coalescing-operator',
       'react-native-reanimated/plugin',
     ],
   };
