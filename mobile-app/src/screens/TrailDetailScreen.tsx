@@ -95,18 +95,43 @@ const TrailDetailScreen: React.FC = () => {
   };
 
   const createHikeSession = async () => {
-    if (!trail || !trail.park_id) {
+    // Defensive guards: ensure trail and required fields are never null
+    if (!trail) {
       setHikeState('error');
-      Alert.alert('Error', 'Missing required trail information');
+      Alert.alert('Error', 'Trail information not loaded');
+      return;
+    }
+
+    if (!trail.id) {
+      setHikeState('error');
+      Alert.alert('Error', 'Trail ID is missing');
+      return;
+    }
+
+    if (!trail.park_id) {
+      setHikeState('error');
+      Alert.alert('Error', 'Trail is missing park information. Cannot start hike.');
       return;
     }
 
     try {
       setHikeState('creating_session');
       
-      // Get park name from trail (we'll need to fetch park or pass it)
-      // For now, use a placeholder - in production, fetch park detail
-      const parkName = `Park ${trail.park_id}`; // TODO: Fetch actual park name
+      // Fetch actual park name from park detail
+      let parkName: string;
+      try {
+        const parkDetail = await ApiService.getParkDetail(trail.park_id);
+        parkName = parkDetail.name;
+      } catch (parkError) {
+        console.error('Error fetching park detail:', parkError);
+        // Fallback to park_id if fetch fails, but log the error
+        parkName = trail.park_id;
+      }
+      
+      // Defensive check: ensure parkName is valid
+      if (!parkName || parkName.trim().length === 0) {
+        throw new Error('Park name is required but could not be determined');
+      }
       
       const session = await ApiService.createHikeSession({
         user_id: 'current-user-id', // TODO: Get from auth
@@ -114,6 +139,11 @@ const TrailDetailScreen: React.FC = () => {
         park_id: trail.park_id,
         park_name: parkName,
       });
+
+      // Defensive check: ensure session was created successfully
+      if (!session || !session.id) {
+        throw new Error('Failed to create hike session: invalid response');
+      }
 
       // Navigate to ActiveHike screen
       setHikeState('active');
@@ -125,9 +155,10 @@ const TrailDetailScreen: React.FC = () => {
       } as never);
     } catch (err: any) {
       setHikeState('error');
+      const errorMessage = err.message || 'An error occurred while creating the hike session. Please try again.';
       Alert.alert(
         'Failed to Start Hike',
-        err.message || 'An error occurred while creating the hike session. Please try again.',
+        errorMessage,
         [
           {
             text: 'OK',
