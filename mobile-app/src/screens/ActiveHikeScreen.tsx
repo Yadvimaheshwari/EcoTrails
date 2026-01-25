@@ -16,6 +16,7 @@ import EcoDroidService from '../services/EcoDroidService';
 import WearableService from '../services/WearableService';
 import GeminiCompanionService, { CompanionMessage } from '../services/GeminiCompanionService';
 import CompanionChat from '../components/CompanionChat';
+import ApiService from '../services/ApiService';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
 interface Observation {
@@ -57,6 +58,9 @@ const ActiveHikeScreen: React.FC = () => {
   const [showCompanionChat, setShowCompanionChat] = useState(false);
   const [companionInsights, setCompanionInsights] = useState<CompanionMessage[]>([]);
   const [proactiveSuggestion, setProactiveSuggestion] = useState<CompanionMessage | null>(null);
+  const [hikeStartTime] = useState(Date.now());
+  const [totalDistance, setTotalDistance] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
   const mapRef = useRef<MapView>(null);
 
   // Helper function to get current season
@@ -220,13 +224,62 @@ const ActiveHikeScreen: React.FC = () => {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'End',
-          onPress: () => {
-            EcoDroidService.endSession();
-            navigation.navigate('PostHike', { sessionId });
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Stop tracking
+              EcoDroidService.endSession();
+              
+              // Calculate duration
+              const durationMinutes = Math.floor((Date.now() - hikeStartTime) / 60000);
+              
+              // End session via API
+              await ApiService.endHikeSession(sessionId, {
+                distance_miles: totalDistance,
+                duration_minutes: durationMinutes,
+                route_path: routePath.map((point, index) => ({
+                  lat: point.latitude,
+                  lng: point.longitude,
+                  timestamp: new Date(hikeStartTime + index * 5000).toISOString(),
+                })),
+              });
+
+              // Navigate to HikeSummary
+              navigation.navigate('Activity' as never, {
+                screen: 'HikeSummary',
+                params: {
+                  sessionId,
+                  distance_miles: totalDistance,
+                  duration_minutes: durationMinutes,
+                  route_path: routePath,
+                },
+              } as never);
+            } catch (error: any) {
+              console.error('Error ending hike:', error);
+              Alert.alert(
+                'Error',
+                error.message || 'Failed to end hike. Please try again.',
+                [
+                  {
+                    text: 'Retry',
+                    onPress: handleEndHike,
+                  },
+                  {
+                    text: 'Cancel',
+                    style: 'cancel',
+                  },
+                ]
+              );
+            }
           },
         },
       ]
     );
+  };
+
+  const handlePauseResume = () => {
+    setIsPaused(!isPaused);
+    // TODO: Pause/resume location tracking
   };
 
   return (

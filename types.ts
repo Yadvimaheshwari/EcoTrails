@@ -1,8 +1,27 @@
 
 export enum AppView {
   ONBOARDING = 'onboarding',
+  // Main Tab Views
+  EXPLORE = 'explore',
+  MAP = 'map',
+  RECORD_HIKE = 'record_hike',
+  ACTIVITY = 'activity',
+  PROFILE = 'profile',
+  // Nested/Stack Views
   PARK_SELECTION = 'park_selection',
-  DASHBOARD = 'explore',
+  TRAIL_DETAIL = 'trail_detail',
+  PARK_DETAIL = 'park_detail',
+  SAVED_TRAILS = 'saved_trails',
+  HIKEDETAIL = 'hike_detail',
+  POST_HIKE_INSIGHTS = 'post_hike_insights',
+  REPLAY_3D = 'replay_3d',
+  STATISTICS = 'statistics',
+  SETTINGS = 'settings',
+  WEARABLE_DEVICES = 'wearable_devices',
+  ECODROID_DEVICES = 'ecodroid_devices',
+  ABOUT = 'about',
+  // Legacy/Modal Views
+  DASHBOARD = 'dashboard',
   JOURNAL = 'journal',
   TERRAIN = 'terrain',
   STUDIO = 'studio',
@@ -10,7 +29,8 @@ export enum AppView {
   REPORT = 'report',
   INGESTION = 'ingestion',
   BRIEFING = 'briefing',
-  ACCOUNT = 'account'
+  ACCOUNT = 'account',
+  ACTIVE_HIKE = 'active_hike',
 }
 
 export type InterfaceState = 

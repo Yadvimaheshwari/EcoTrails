@@ -51,37 +51,23 @@ const TrailSelectionScreen: React.FC = () => {
   }, [searchQuery, selectedState, selectedType]);
 
   const handleSelectPark = async (park: Park) => {
-    setLoading(park.id);
-    try {
-      // Create session - device_id is optional (for future EcoDroid integration)
-      const sessionResponse = await axios.post(
-        `${API_BASE_URL}/api/v1/sessions`,
-        {
-          park_name: park.name,
-          // device_id is optional - will be null if no device
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+    // Check if we're in "select mode" (coming from Record Hike tab)
+    const route = navigation.getState()?.routes?.find(r => r.name === 'Explore');
+    const selectMode = route?.params?.selectMode || false;
 
-      const sessionId = sessionResponse.data.session_id;
-
-      // Navigate to active hike
-      navigation.navigate('ActiveHike', {
-        sessionId,
-        parkName: park.name,
-        deviceId: null, // No EcoDroid device yet - app works without it
-      });
-    } catch (error: any) {
-      console.error('Error creating session:', error);
-      const errorMessage = error.response?.data?.detail || error.message || 'Failed to start hike. Please check your connection.';
-      Alert.alert('Error', errorMessage);
-    } finally {
-      setLoading(null);
+    if (selectMode) {
+      // Return selected park to Record Hike screen
+      // This will be handled via navigation params
+      navigation.goBack();
+      return;
     }
+
+    // Always navigate to ParkDetail - NO AUTO-START
+    // ParkDetail is for exploration only, no hike creation
+    navigation.navigate('Explore' as never, {
+      screen: 'ParkDetail',
+      params: { parkId: park.id },
+    } as never);
   };
 
   const clearFilters = () => {

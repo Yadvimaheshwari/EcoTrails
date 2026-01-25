@@ -5,6 +5,7 @@ import base64
 import logging
 import asyncio
 from typing import List, Optional, Dict, Any, Union
+from pydantic import BaseModel as PydanticBaseModel, Field
 from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, WebSocket, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -396,6 +397,9 @@ async def ecodroid_websocket(
 # Session Management
 class CreateSessionRequest(BaseModel):
     park_name: str
+    park_id: str
+    trail_id: str
+    user_id: str
     device_id: Optional[str] = None
 
 @app.post("/api/v1/sessions")
@@ -404,16 +408,27 @@ async def create_session(
     db: Session = Depends(get_db)
 ):
     """Create a new hike session"""
+    # Defensive check: ensure required fields are present
+    if not request.trail_id or not request.park_id or not request.park_name:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing required fields: trail_id, park_id, and park_name are required"
+        )
+    
     session_id = str(uuid.uuid4())
     session = HikeSession(
         id=session_id,
-        user_id="default_user",  # Should come from auth token
+        user_id=request.user_id,
         park_name=request.park_name,
         device_id=request.device_id,
         status='active'
     )
     db.add(session)
     db.commit()
+    
+    # Log session creation
+    logger.info(f"Created hike session {session_id} for user {request.user_id} on trail {request.trail_id}")
+    
     return {"session_id": session_id, "status": "created"}
 
 @app.get("/api/v1/sessions/{session_id}")
@@ -430,16 +445,29 @@ async def get_session(session_id: str, db: Session = Depends(get_db)):
         "device_id": session.device_id
     }
 
+class EndSessionRequest(BaseModel):
+    distance_miles: float
+    duration_minutes: int
+    route_path: Optional[List[Dict[str, Any]]] = None
+
 @app.post("/api/v1/sessions/{session_id}/end")
-async def end_session(session_id: str, db: Session = Depends(get_db)):
+async def end_session(
+    session_id: str,
+    request: EndSessionRequest,
+    db: Session = Depends(get_db)
+):
     """End an active session"""
     session = db.query(HikeSession).filter(HikeSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     session.status = 'completed'
     session.end_time = datetime.utcnow()
+    
+    # Log session end with hike data
+    logger.info(f"Session {session_id} ended: {request.distance_miles} miles, {request.duration_minutes} minutes")
+    
     db.commit()
-    return {"status": "completed"}
+    return {"status": "completed", "session_id": session_id}
 
 # Device Management
 @app.post("/api/v1/devices/ecodroid")

@@ -1,37 +1,100 @@
 {
   "expo": {
     "name": "EcoAtlas",
-    "slug": "ecoatlas-mobile",
+    "slug": "ecoatlas",
     "version": "1.0.0",
     "orientation": "portrait",
-    "sdkVersion": "54.0.0",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#2D4739"
     },
     "assetBundlePatterns": [
       "**/*"
     ],
-    "extra": {
-      "eas": {
-        "projectId": "ecoatlas-mobile"
-      }
-    },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.ecoatlas.mobile"
+      "bundleIdentifier": "com.ecoatlas.app"
     },
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#2D4739"
       },
-      "package": "com.ecoatlas.mobile"
+      "package": "com.ecoatlas.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-location",
-      "expo-camera",
       "expo-asset"
-    ]
+    ],
+    "scheme": "ecoatlas",
+    "extra": {
+      "eas": {
+        "projectId": "your-project-id"
+      }
+    },
+    "linking": {
+      "prefixes": [
+        "ecoatlas://",
+        "https://ecoatlas.app"
+      ],
+      "config": {
+        "screens": {
+          "Main": {
+            "screens": {
+              "Explore": {
+                "path": "explore",
+                "screens": {
+                  "TrailList": "",
+                  "TrailDetail": "trail/:trailId",
+                  "ParkDetail": "park/:parkId",
+                  "SavedTrails": "saved"
+                }
+              },
+              "Map": {
+                "path": "map",
+                "screens": {
+                  "MapView": "",
+                  "TrailDetail": "trail/:trailId",
+                  "ParkDetail": "park/:parkId"
+                }
+              },
+              "RecordHike": {
+                "path": "record",
+                "screens": {
+                  "RecordHikeHome": "",
+                  "TrailSelection": "select"
+                }
+              },
+              "Activity": {
+                "path": "activity",
+                "screens": {
+                  "ActivityList": "",
+                  "HikeDetail": "hike/:hikeId",
+                  "PostHike": "insights/:hikeId",
+                  "Replay3D": "replay/:hikeId",
+                  "Statistics": "statistics"
+                }
+              },
+              "Profile": {
+                "path": "profile",
+                "screens": {
+                  "ProfileHome": "",
+                  "Settings": "settings",
+                  "WearableDevices": "wearables",
+                  "EcoDroidDevices": "ecodroid",
+                  "About": "about"
+                }
+              }
+            }
+          },
+          "ActiveHike": "record/active/:sessionId"
+        }
+      }
+    }
   }
 }

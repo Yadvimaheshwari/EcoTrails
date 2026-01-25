@@ -120,22 +120,94 @@ const App: React.FC = () => {
   }} />;
 
   const renderView = () => {
+    // Main Tab Views
     switch (currentView) {
-      case AppView.PARK_SELECTION: return <ParkSelectionView onBriefingReady={(b) => { setActiveBriefing(b); setCurrentView(AppView.BRIEFING); }} />;
-      case AppView.BRIEFING: return activeBriefing ? <BriefingView briefing={activeBriefing} onStart={() => setCurrentView(AppView.DASHBOARD)} /> : <ParkSelectionView onBriefingReady={setActiveBriefing} />;
-      case AppView.DASHBOARD: return <Dashboard activePark={activeBriefing?.park_name || null} onStart={() => setCurrentView(AppView.PARK_SELECTION)} onEnd={() => setCurrentView(AppView.INGESTION)} />;
-      case AppView.REPORT: return selectedRecord ? <ReportView record={selectedRecord} onBack={() => { setSelectedRecord(null); setCurrentView(AppView.JOURNAL); }} /> : <MemoryView records={records} onOpenReport={navigateToReport} />;
-      case AppView.JOURNAL: return <MemoryView records={records} onOpenReport={navigateToReport} />;
-      case AppView.TERRAIN: return <ExplorationView />;
-      case AppView.STUDIO: return <VeoGenView />;
-      case AppView.ACCOUNT: return <AccountView onLogout={() => { localStorage.clear(); window.location.reload(); }} />;
-      case AppView.INGESTION: return <MediaIngestionView onComplete={(p) => { setSessionPacket(p); setCurrentView(AppView.ANALYSIS); }} onCancel={() => setCurrentView(AppView.DASHBOARD)} />;
-      case AppView.ANALYSIS: return sessionPacket && activeBriefing ? <AnalysisView packet={sessionPacket} parkName={activeBriefing.park_name} records={records} onComplete={onAnalysisComplete} /> : <Dashboard activePark={null} onStart={() => setCurrentView(AppView.PARK_SELECTION)} onEnd={() => {}} />;
-      default: return <Dashboard activePark={null} onStart={() => setCurrentView(AppView.PARK_SELECTION)} onEnd={() => {}} />;
+      // Explore Tab
+      case AppView.EXPLORE:
+      case AppView.PARK_SELECTION:
+        return <ParkSelectionView onBriefingReady={(b) => { setActiveBriefing(b); setCurrentView(AppView.PARK_DETAIL); }} />;
+      case AppView.PARK_DETAIL:
+        return activeBriefing ? <BriefingView briefing={activeBriefing} onStart={() => setCurrentView(AppView.RECORD_HIKE)} /> : <ParkSelectionView onBriefingReady={setActiveBriefing} />;
+      case AppView.TRAIL_DETAIL:
+        // TODO: Implement TrailDetailView
+        return <ParkSelectionView onBriefingReady={setActiveBriefing} />;
+      case AppView.SAVED_TRAILS:
+        // TODO: Implement SavedTrailsView
+        return <ParkSelectionView onBriefingReady={setActiveBriefing} />;
+      
+      // Map Tab
+      case AppView.MAP:
+        // TODO: Implement MapView
+        return <ExplorationView />;
+      
+      // Record Hike Tab
+      case AppView.RECORD_HIKE:
+        // TODO: Implement RecordHikeView (no auto-start)
+        return <Dashboard activePark={activeBriefing?.park_name || null} onStart={() => setCurrentView(AppView.PARK_SELECTION)} onEnd={() => setCurrentView(AppView.INGESTION)} />;
+      case AppView.ACTIVE_HIKE:
+        return <Dashboard activePark={activeBriefing?.park_name || null} onStart={() => setCurrentView(AppView.PARK_SELECTION)} onEnd={() => setCurrentView(AppView.INGESTION)} />;
+      
+      // Activity Tab
+      case AppView.ACTIVITY:
+      case AppView.JOURNAL:
+        return <MemoryView records={records} onOpenReport={navigateToReport} />;
+      case AppView.HIKEDETAIL:
+        return selectedRecord ? <ReportView record={selectedRecord} onBack={() => { setSelectedRecord(null); setCurrentView(AppView.ACTIVITY); }} /> : <MemoryView records={records} onOpenReport={navigateToReport} />;
+      case AppView.POST_HIKE_INSIGHTS:
+        return selectedRecord ? <ReportView record={selectedRecord} onBack={() => { setSelectedRecord(null); setCurrentView(AppView.ACTIVITY); }} /> : <MemoryView records={records} onOpenReport={navigateToReport} />;
+      case AppView.REPLAY_3D:
+        // TODO: Implement Replay3DView
+        return <MemoryView records={records} onOpenReport={navigateToReport} />;
+      case AppView.STATISTICS:
+        // TODO: Implement StatisticsView
+        return <MemoryView records={records} onOpenReport={navigateToReport} />;
+      case AppView.REPORT:
+        return selectedRecord ? <ReportView record={selectedRecord} onBack={() => { setSelectedRecord(null); setCurrentView(AppView.ACTIVITY); }} /> : <MemoryView records={records} onOpenReport={navigateToReport} />;
+      
+      // Profile Tab
+      case AppView.PROFILE:
+      case AppView.ACCOUNT:
+        return <AccountView onLogout={() => { localStorage.clear(); window.location.reload(); }} />;
+      case AppView.SETTINGS:
+        // TODO: Implement SettingsView
+        return <AccountView onLogout={() => { localStorage.clear(); window.location.reload(); }} />;
+      case AppView.WEARABLE_DEVICES:
+        // TODO: Implement WearableDevicesView
+        return <AccountView onLogout={() => { localStorage.clear(); window.location.reload(); }} />;
+      case AppView.ECODROID_DEVICES:
+        // TODO: Implement EcoDroidDevicesView
+        return <AccountView onLogout={() => { localStorage.clear(); window.location.reload(); }} />;
+      case AppView.ABOUT:
+        // TODO: Implement AboutView
+        return <AccountView onLogout={() => { localStorage.clear(); window.location.reload(); }} />;
+      
+      // Legacy/Modal Views
+      case AppView.DASHBOARD:
+        return <Dashboard activePark={activeBriefing?.park_name || null} onStart={() => setCurrentView(AppView.PARK_SELECTION)} onEnd={() => setCurrentView(AppView.INGESTION)} />;
+      case AppView.TERRAIN:
+        return <ExplorationView />;
+      case AppView.STUDIO:
+        return <VeoGenView />;
+      case AppView.INGESTION:
+        return <MediaIngestionView onComplete={(p) => { setSessionPacket(p); setCurrentView(AppView.ANALYSIS); }} onCancel={() => setCurrentView(AppView.EXPLORE)} />;
+      case AppView.ANALYSIS:
+        return sessionPacket && activeBriefing ? <AnalysisView packet={sessionPacket} parkName={activeBriefing.park_name} records={records} onComplete={onAnalysisComplete} /> : <ParkSelectionView onBriefingReady={setActiveBriefing} />;
+      case AppView.BRIEFING:
+        return activeBriefing ? <BriefingView briefing={activeBriefing} onStart={() => setCurrentView(AppView.RECORD_HIKE)} /> : <ParkSelectionView onBriefingReady={setActiveBriefing} />;
+      
+      default:
+        return <ParkSelectionView onBriefingReady={setActiveBriefing} />;
     }
   };
 
-  const showNav = ![AppView.INGESTION, AppView.ANALYSIS, AppView.PARK_SELECTION, AppView.BRIEFING].includes(currentView);
+  // Show navigation for main tabs, hide for modals and onboarding
+  const showNav = ![
+    AppView.ONBOARDING,
+    AppView.INGESTION,
+    AppView.ANALYSIS,
+    AppView.ACTIVE_HIKE,
+    AppView.BRIEFING,
+  ].includes(currentView);
 
   return (
     <div className="min-h-screen bg-[#F9F9F7] flex flex-col">
