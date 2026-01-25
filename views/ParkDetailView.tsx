@@ -12,6 +12,131 @@ interface ParkDetailViewProps {
   onBack?: () => void;
 }
 
+// Weather Widget Component
+const WeatherWidget: React.FC<{ park: Park }> = ({ park }) => {
+  const [weather, setWeather] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchWeather();
+  }, [park]);
+
+  const fetchWeather = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Use OpenWeatherMap API (free tier)
+      // You can also use other weather APIs like WeatherAPI.com, Open-Meteo, etc.
+      const apiKey = import.meta.env.VITE_WEATHER_API_KEY || 'demo';
+      const url = `https://api.openweathermap.org/data/2.5/weather?lat=${park.coordinates.lat}&lon=${park.coordinates.lng}&units=imperial&appid=${apiKey}`;
+      
+      // If no API key, use a mock weather service or fallback
+      if (apiKey === 'demo' || !apiKey) {
+        // Fallback: Generate mock weather data
+        const mockWeather = {
+          temp: Math.round(60 + Math.random() * 30),
+          condition: ['Sunny', 'Partly Cloudy', 'Cloudy', 'Rainy'][Math.floor(Math.random() * 4)],
+          humidity: Math.round(40 + Math.random() * 40),
+          windSpeed: Math.round(5 + Math.random() * 15),
+          icon: '🌤️',
+        };
+        setWeather(mockWeather);
+        setLoading(false);
+        return;
+      }
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error('Weather API request failed');
+      }
+      
+      const data = await response.json();
+      setWeather({
+        temp: Math.round(data.main.temp),
+        condition: data.weather[0].main,
+        humidity: data.main.humidity,
+        windSpeed: Math.round(data.wind.speed * 2.237), // Convert m/s to mph
+        icon: getWeatherIcon(data.weather[0].main),
+      });
+    } catch (err: any) {
+      console.error('Error fetching weather:', err);
+      setError('Unable to load weather data');
+      // Fallback to mock data
+      const mockWeather = {
+        temp: Math.round(60 + Math.random() * 30),
+        condition: 'Partly Cloudy',
+        humidity: 65,
+        windSpeed: 10,
+        icon: '🌤️',
+      };
+      setWeather(mockWeather);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getWeatherIcon = (condition: string): string => {
+    const conditionLower = condition.toLowerCase();
+    if (conditionLower.includes('clear')) return '☀️';
+    if (conditionLower.includes('cloud')) return '☁️';
+    if (conditionLower.includes('rain')) return '🌧️';
+    if (conditionLower.includes('snow')) return '❄️';
+    if (conditionLower.includes('thunder')) return '⛈️';
+    return '🌤️';
+  };
+
+  if (loading) {
+    return (
+      <section>
+        <h2 className="text-xl font-semibold text-[#2D4739] mb-4">Weather</h2>
+        <div className="bg-white p-6 rounded-xl border border-[#E2E8DE]">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 border-2 border-[#2D4739]/20 border-t-[#2D4739] rounded-full animate-spin"></div>
+            <p className="text-[#8E8B82]">Loading weather...</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (error && !weather) {
+    return (
+      <section>
+        <h2 className="text-xl font-semibold text-[#2D4739] mb-4">Weather</h2>
+        <div className="bg-white p-6 rounded-xl border border-[#E2E8DE]">
+          <p className="text-[#8E8B82]">{error}</p>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <h2 className="text-xl font-semibold text-[#2D4739] mb-4">Weather</h2>
+      <div className="bg-white p-6 rounded-xl border border-[#E2E8DE]">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="text-5xl">{weather?.icon || '🌤️'}</div>
+            <div>
+              <p className="text-3xl font-bold text-[#2D4739]">{weather?.temp}°F</p>
+              <p className="text-sm text-[#8E8B82]">{weather?.condition}</p>
+            </div>
+          </div>
+          <div className="text-right space-y-1">
+            <p className="text-sm text-[#8E8B82]">Humidity: {weather?.humidity}%</p>
+            <p className="text-sm text-[#8E8B82]">Wind: {weather?.windSpeed} mph</p>
+          </div>
+        </div>
+        {error && (
+          <p className="text-xs text-orange-600 mt-2">⚠️ Using estimated weather data</p>
+        )}
+      </div>
+    </section>
+  );
+};
+
 // Mock trail data generator (matches mobile app's ApiService)
 const generateMockTrails = (parkId: string, parkName: string) => {
   const difficulties = ['easy', 'moderate', 'hard', 'expert'];
