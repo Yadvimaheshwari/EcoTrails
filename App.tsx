@@ -143,9 +143,9 @@ const App: React.FC = () => {
       // Record Hike Tab
       case AppView.RECORD_HIKE:
         // TODO: Implement RecordHikeView (no auto-start)
-        return <Dashboard activePark={activeBriefing?.park_name || null} onStart={() => setCurrentView(AppView.PARK_SELECTION)} onEnd={() => setCurrentView(AppView.INGESTION)} />;
+        return <Dashboard activePark={activeBriefing?.park_name || null} onStart={() => setCurrentView(AppView.EXPLORE)} onEnd={() => setCurrentView(AppView.INGESTION)} />;
       case AppView.ACTIVE_HIKE:
-        return <Dashboard activePark={activeBriefing?.park_name || null} onStart={() => setCurrentView(AppView.PARK_SELECTION)} onEnd={() => setCurrentView(AppView.INGESTION)} />;
+        return <Dashboard activePark={activeBriefing?.park_name || null} onStart={() => setCurrentView(AppView.EXPLORE)} onEnd={() => setCurrentView(AppView.INGESTION)} />;
       
       // Activity Tab
       case AppView.ACTIVITY:
