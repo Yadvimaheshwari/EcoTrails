@@ -10,6 +10,7 @@ import {
   Dimensions,
   TouchableOpacity,
   Alert,
+  ScrollView,
 } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
@@ -144,6 +145,17 @@ const ActiveHikeScreen: React.FC = () => {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   };
+
+  useEffect(() => {
+    // Load park trails if parkId is available
+    if (parkId) {
+      ApiService.getTrailsByPark(parkId).then((trails) => {
+        setParkTrails(trails);
+      }).catch((error) => {
+        console.error('Error loading park trails:', error);
+      });
+    }
+  }, [parkId]);
 
   useEffect(() => {
     // Initialize services
@@ -825,6 +837,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   chatModal: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#F9F9F7',
+    zIndex: 1000,
     position: 'absolute',
     top: 0,
     left: 0,

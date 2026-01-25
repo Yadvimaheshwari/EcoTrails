@@ -291,6 +291,44 @@ const TrailDetailScreen: React.FC = () => {
           </View>
         )}
 
+        {/* Weather Information */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Weather</Text>
+          <View style={styles.weatherWidget}>
+            <Text style={styles.weatherText}>🌤️ Current conditions unavailable</Text>
+            <Text style={styles.weatherSubtext}>Weather data coming soon</Text>
+            <Text style={styles.weatherNote}>
+              Check local weather services before your hike
+            </Text>
+          </View>
+        </View>
+
+        {/* Reviews Section */}
+        {trail.rating && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              Reviews {trail.review_count ? `(${trail.review_count})` : ''}
+            </Text>
+            <View style={styles.ratingSummary}>
+              <View style={styles.ratingDisplay}>
+                <Text style={styles.ratingValue}>{trail.rating.toFixed(1)}</Text>
+                <Text style={styles.ratingStars}>⭐⭐⭐⭐⭐</Text>
+                {trail.review_count && (
+                  <Text style={styles.ratingCount}>{trail.review_count} reviews</Text>
+                )}
+              </View>
+            </View>
+            <View style={styles.reviewsPlaceholder}>
+              <Text style={styles.reviewsPlaceholderText}>
+                📝 Detailed reviews coming soon
+              </Text>
+              <Text style={styles.reviewsPlaceholderSubtext}>
+                User reviews and ratings will be displayed here
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* Map Preview */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Trail Map</Text>
