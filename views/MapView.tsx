@@ -9,19 +9,19 @@ import { Park, US_PARKS } from '../data/parks';
 // Declare Google Maps types
 declare global {
   interface Window {
-    google: typeof google;
-  initMap: () => void;
-  googleMapsLoaded: boolean;
-  googleMapsCallback: () => void;
-  google?: {
-    maps: {
-      Map: new (element: HTMLElement, options?: any) => any;
-      Marker: new (options?: any) => any;
-      MapTypeId: { TERRAIN: string; ROADMAP: string; SATELLITE: string; HYBRID: string };
-      SymbolPath: { CIRCLE: any };
-      Size: new (width: number, height: number) => any;
+    google?: {
+      maps: {
+        Map: new (element: HTMLElement, options?: any) => any;
+        Marker: new (options?: any) => any;
+        MapTypeId: { TERRAIN: string; ROADMAP: string; SATELLITE: string; HYBRID: string };
+        SymbolPath: { CIRCLE: any };
+        Size: new (width: number, height: number) => any;
+      };
     };
-  };
+    initMap?: () => void;
+    googleMapsLoaded?: boolean;
+    googleMapsCallback?: () => void;
+  }
 }
 
 interface MapViewProps {
