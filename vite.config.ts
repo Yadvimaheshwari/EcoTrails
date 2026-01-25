@@ -4,7 +4,14 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
     // Load env vars from .env, .env.local, .env.[mode], .env.[mode].local
+    // Vite automatically exposes env vars prefixed with VITE_ to import.meta.env
     const env = loadEnv(mode, process.cwd(), '');
+    
+    // Debug: Log loaded env vars (for development)
+    if (mode === 'development') {
+      console.log('Loaded Google Maps API Key:', env.VITE_GOOGLE_MAPS_API_KEY ? `${env.VITE_GOOGLE_MAPS_API_KEY.substring(0, 10)}...` : 'NOT FOUND');
+    }
+    
     return {
       server: {
         port: 3000,

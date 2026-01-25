@@ -57,13 +57,18 @@ const MapView: React.FC<MapViewProps> = ({ onParkSelect, onTrailSelect }) => {
     }
 
     // Load Google Maps script
+    // Vite automatically exposes VITE_ prefixed env vars to import.meta.env
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
     
     // Debug: Log API key status (first 10 chars only for security)
-    console.log('Google Maps API Key status:', apiKey ? `${apiKey.substring(0, 10)}...` : 'NOT SET');
+    console.log('[MapView] Google Maps API Key status:', apiKey ? `${apiKey.substring(0, 10)}...` : 'NOT SET');
+    console.log('[MapView] All VITE_ env vars:', Object.keys(import.meta.env).filter(k => k.startsWith('VITE_')));
+    console.log('[MapView] import.meta.env.VITE_GOOGLE_MAPS_API_KEY:', import.meta.env.VITE_GOOGLE_MAPS_API_KEY ? 'EXISTS' : 'UNDEFINED');
     
-    if (!apiKey || apiKey === 'demo' || apiKey === 'your_google_maps_api_key_here' || apiKey.trim() === '') {
+    if (!apiKey || apiKey === 'demo' || apiKey === 'your_google_maps_api_key_here' || (typeof apiKey === 'string' && apiKey.trim() === '')) {
       // No API key - use fallback map
+      console.warn('[MapView] Google Maps API key not found or invalid');
+      console.warn('[MapView] Available env vars:', Object.keys(import.meta.env));
       setError('Google Maps API key not configured. Using fallback view.');
       setLoading(false);
       return;
