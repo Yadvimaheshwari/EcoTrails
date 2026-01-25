@@ -16,7 +16,7 @@ import AnalysisView from './views/AnalysisView';
 import AccountView from './views/AccountView';
 
 const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
+  const [currentView, setCurrentView] = useState<AppView>(AppView.EXPLORE);
   const [selectedRecord, setSelectedRecord] = useState<EnvironmentalRecord | null>(null);
   const [hasApiKey, setHasApiKey] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(true);
@@ -183,7 +183,7 @@ const App: React.FC = () => {
       
       // Legacy/Modal Views
       case AppView.DASHBOARD:
-        return <Dashboard activePark={activeBriefing?.park_name || null} onStart={() => setCurrentView(AppView.PARK_SELECTION)} onEnd={() => setCurrentView(AppView.INGESTION)} />;
+        return <Dashboard activePark={activeBriefing?.park_name || null} onStart={() => setCurrentView(AppView.EXPLORE)} onEnd={() => setCurrentView(AppView.INGESTION)} />;
       case AppView.TERRAIN:
         return <ExplorationView />;
       case AppView.STUDIO:
