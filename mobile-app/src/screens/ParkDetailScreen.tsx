@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   FlatList,
+  Alert,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import ApiService, { ParkDetail, Trail } from '../services/ApiService';
@@ -104,11 +105,24 @@ const ParkDetailScreen: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
+      
+      // Defensive check: ensure parkId is provided
+      if (!parkId) {
+        throw new Error('Park ID is required');
+      }
+      
       const parkData = await ApiService.getParkDetail(parkId);
+      
+      // Defensive check: ensure park data is valid
+      if (!parkData || !parkData.id) {
+        throw new Error('Invalid park data received');
+      }
+      
       setPark(parkData);
       setTrails(parkData.trails || []);
     } catch (err: any) {
-      setError(err.message || 'Failed to load park details');
+      const errorMessage = err.message || 'Failed to load park details';
+      setError(errorMessage);
       console.error('Error loading park detail:', err);
     } finally {
       setLoading(false);
@@ -140,6 +154,18 @@ const ParkDetailScreen: React.FC = () => {
   }, [trails, filterDifficulty, sortBy]);
 
   const handleTrailPress = (trail: Trail) => {
+    // Defensive check: ensure trail has required fields
+    if (!trail || !trail.id) {
+      Alert.alert('Error', 'Invalid trail information');
+      return;
+    }
+    
+    if (!trail.park_id) {
+      Alert.alert('Error', 'Trail is missing park information');
+      return;
+    }
+    
+    // Navigate to TrailDetail - NO AUTO-START
     navigation.navigate('Explore' as never, {
       screen: 'TrailDetail',
       params: { trailId: trail.id },
