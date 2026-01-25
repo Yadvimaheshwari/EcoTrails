@@ -2,3 +2,17 @@
 .env.local
 .env
 node_modules
+.env.example
+.env.local.example
+.env.production.example
+.env.development.example
+.env.test.example
+.env.staging.example
+.env.production.example
+.env.development.example
+.env.test.example
+.env.staging.example
+.env.production.example
+.env.development.example
+.env.test.example
+.env.staging.example
