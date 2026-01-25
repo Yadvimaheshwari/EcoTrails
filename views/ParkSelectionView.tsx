@@ -5,10 +5,11 @@ import { TrailBriefing } from '../types';
 import { US_PARKS, Park, searchParks, getAllStates, getParksByType } from '../data/parks';
 
 interface ParkSelectionViewProps {
-  onBriefingReady: (briefing: TrailBriefing) => void;
+  onBriefingReady?: (briefing: TrailBriefing) => void;
+  onParkSelect?: (parkId: string) => void;
 }
 
-const ParkSelectionView: React.FC<ParkSelectionViewProps> = ({ onBriefingReady }) => {
+const ParkSelectionView: React.FC<ParkSelectionViewProps> = ({ onBriefingReady, onParkSelect }) => {
   const [loading, setLoading] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedState, setSelectedState] = useState<string | null>(null);
@@ -40,11 +41,24 @@ const ParkSelectionView: React.FC<ParkSelectionViewProps> = ({ onBriefingReady }
 
   const handleSelect = async (park: Park) => {
     setLoading(park.id);
-    try {
-      const briefing = await getParkBriefing(park.name);
-      onBriefingReady(briefing);
-    } catch (err) {
-      console.error(err);
+    
+    // If onParkSelect is provided, use direct navigation to ParkDetailView
+    if (onParkSelect) {
+      onParkSelect(park.id);
+      setLoading(null);
+      return;
+    }
+    
+    // Otherwise, use legacy briefing flow
+    if (onBriefingReady) {
+      try {
+        const briefing = await getParkBriefing(park.name);
+        onBriefingReady(briefing);
+      } catch (err) {
+        console.error(err);
+        setLoading(null);
+      }
+    } else {
       setLoading(null);
     }
   };

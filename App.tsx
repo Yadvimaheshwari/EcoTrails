@@ -10,6 +10,9 @@ import VeoGenView from './views/VeoGenView';
 import ReportView from './views/ReportView';
 import OnboardingView from './views/OnboardingView';
 import ParkSelectionView from './views/ParkSelectionView';
+import ParkDetailView from './views/ParkDetailView';
+import TrailDetailView from './views/TrailDetailView';
+import MapView from './views/MapView';
 import BriefingView from './views/BriefingView';
 import MediaIngestionView from './views/MediaIngestionView';
 import AnalysisView from './views/AnalysisView';
@@ -24,6 +27,8 @@ const App: React.FC = () => {
   
   const [activeBriefing, setActiveBriefing] = useState<TrailBriefing | null>(null);
   const [sessionPacket, setSessionPacket] = useState<MediaPacket | null>(null);
+  const [selectedParkId, setSelectedParkId] = useState<string | null>(null);
+  const [selectedTrailId, setSelectedTrailId] = useState<string | null>(null);
 
   useEffect(() => {
     const checkApiKey = async () => {
@@ -125,11 +130,66 @@ const App: React.FC = () => {
       // Explore Tab
       case AppView.EXPLORE:
       case AppView.PARK_SELECTION:
-        return <ParkSelectionView onBriefingReady={(b) => { setActiveBriefing(b); setCurrentView(AppView.PARK_DETAIL); }} />;
+        return (
+          <ParkSelectionView
+            onBriefingReady={(b) => {
+              setActiveBriefing(b);
+              // Extract park ID from briefing park name to navigate to detail view
+              // For now, navigate to PARK_DETAIL which will show BriefingView
+              // In future, we can enhance to show full ParkDetailView
+              setCurrentView(AppView.PARK_DETAIL);
+            }}
+            onParkSelect={(parkId) => {
+              // Navigate directly to park detail view
+              setSelectedParkId(parkId);
+              setCurrentView(AppView.PARK_DETAIL);
+            }}
+          />
+        );
       case AppView.PARK_DETAIL:
-        return activeBriefing ? <BriefingView briefing={activeBriefing} onStart={() => setCurrentView(AppView.RECORD_HIKE)} /> : <ParkSelectionView onBriefingReady={setActiveBriefing} />;
+        // Check if we have a selected park ID (from direct navigation)
+        if (selectedParkId) {
+          // Show full park detail view
+          return (
+            <ParkDetailView
+              parkId={selectedParkId}
+              onTrailSelect={(trailId) => {
+                setSelectedTrailId(trailId);
+                setCurrentView(AppView.TRAIL_DETAIL);
+              }}
+              onBack={() => {
+                setSelectedParkId(null);
+                setCurrentView(AppView.EXPLORE);
+              }}
+            />
+          );
+        }
+        // Otherwise show briefing view (legacy flow)
+        return activeBriefing ? (
+          <BriefingView briefing={activeBriefing} onStart={() => setCurrentView(AppView.RECORD_HIKE)} />
+        ) : (
+          <ParkSelectionView onBriefingReady={setActiveBriefing} />
+        );
       case AppView.TRAIL_DETAIL:
-        // TODO: Implement TrailDetailView
+        if (selectedTrailId) {
+          return (
+            <TrailDetailView
+              trailId={selectedTrailId}
+              onBack={() => {
+                setSelectedTrailId(null);
+                if (selectedParkId) {
+                  setCurrentView(AppView.PARK_DETAIL);
+                } else {
+                  setCurrentView(AppView.EXPLORE);
+                }
+              }}
+              onStartHike={(trailId, parkId) => {
+                // TODO: Navigate to active hike view
+                alert(`Starting hike on trail ${trailId} in park ${parkId}`);
+              }}
+            />
+          );
+        }
         return <ParkSelectionView onBriefingReady={setActiveBriefing} />;
       case AppView.SAVED_TRAILS:
         // TODO: Implement SavedTrailsView
@@ -137,8 +197,18 @@ const App: React.FC = () => {
       
       // Map Tab
       case AppView.MAP:
-        // TODO: Implement MapView
-        return <ExplorationView />;
+        return (
+          <MapView
+            onParkSelect={(parkId) => {
+              setSelectedParkId(parkId);
+              setCurrentView(AppView.PARK_DETAIL);
+            }}
+            onTrailSelect={(trailId) => {
+              setSelectedTrailId(trailId);
+              setCurrentView(AppView.TRAIL_DETAIL);
+            }}
+          />
+        );
       
       // Record Hike Tab
       case AppView.RECORD_HIKE:
