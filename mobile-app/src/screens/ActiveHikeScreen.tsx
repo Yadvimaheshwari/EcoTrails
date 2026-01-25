@@ -261,36 +261,78 @@ const ActiveHikeScreen: React.FC = () => {
     }
   }, [currentLocation, parkName]);
 
-  // Start location tracking
+  // Location tracking effect - respects pause state
   useEffect(() => {
-    const locationInterval = setInterval(() => {
-      // In production, use expo-location
-      // For now, simulate location updates
-      const newLocation = {
-        lat: 37.7749 + Math.random() * 0.01,
-        lng: -122.4194 + Math.random() * 0.01,
-      };
-      setCurrentLocation(newLocation);
-      setRoutePath((prev) => [...prev, { latitude: newLocation.lat, longitude: newLocation.lng }]);
-      
-      // Update map
-      if (mapRef.current) {
-        mapRef.current.animateToRegion({
-          latitude: newLocation.lat,
-          longitude: newLocation.lng,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
+    if (isPaused) {
+      // Stop tracking when paused
+      if (locationTrackingInterval.current) {
+        clearInterval(locationTrackingInterval.current);
+        locationTrackingInterval.current = null;
+      }
+      return;
+    }
+
+    // Start/resume location tracking
+    locationTrackingInterval.current = setInterval(async () => {
+      try {
+        const location = await Location.getCurrentPositionAsync({});
+        const newLocation = {
+          lat: location.coords.latitude,
+          lng: location.coords.longitude,
+        };
+        
+        setCurrentLocation(newLocation);
+        
+        // Add to route path
+        const newPoint = { latitude: newLocation.lat, longitude: newLocation.lng };
+        setRoutePath((prev) => {
+          const updated = [...prev, newPoint];
+          
+          // Calculate distance increment
+          if (prev.length > 0) {
+            const lastPoint = prev[prev.length - 1];
+            const distance = calculateDistance(
+              lastPoint.latitude,
+              lastPoint.longitude,
+              newPoint.latitude,
+              newPoint.longitude
+            );
+            setTotalDistance((current) => current + distance);
+          }
+          
+          return updated;
         });
+        
+        // Update Gemini context
+        GeminiCompanionService.setContext({
+          parkName,
+          location: newLocation,
+          timeOfDay: new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening',
+          season: getSeason(),
+        });
+        
+        // Update map
+        if (mapRef.current) {
+          mapRef.current.animateToRegion({
+            latitude: newLocation.lat,
+            longitude: newLocation.lng,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          });
+        }
+      } catch (error) {
+        console.error('Error getting location:', error);
+        // Continue tracking even if one location fails
       }
     }, 5000);
 
     return () => {
-      clearInterval(locationInterval);
       if (locationTrackingInterval.current) {
         clearInterval(locationTrackingInterval.current);
+        locationTrackingInterval.current = null;
       }
     };
-  }, []);
+  }, [isPaused, parkName]);
 
   // Update elapsed time display
   useEffect(() => {
@@ -400,24 +442,12 @@ const ActiveHikeScreen: React.FC = () => {
         setPauseStartTime(null);
       }
       setIsPaused(false);
-      
-      // Resume location tracking
-      if (locationTrackingInterval.current) {
-        clearInterval(locationTrackingInterval.current);
-      }
-      locationTrackingInterval.current = setInterval(() => {
-        // Location tracking logic here
-      }, 5000);
+      // Location tracking will resume automatically via useEffect
     } else {
       // Pausing: record when pause started
       setPauseStartTime(Date.now());
       setIsPaused(true);
-      
-      // Stop location tracking
-      if (locationTrackingInterval.current) {
-        clearInterval(locationTrackingInterval.current);
-        locationTrackingInterval.current = null;
-      }
+      // Location tracking will stop automatically via useEffect
     }
   };
 
@@ -635,6 +665,56 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#2D4739',
   },
+  statsOverlay: {
+    position: 'absolute',
+    bottom: 180,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#8E8B82',
+    marginBottom: 4,
+  },
+  statValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2D4739',
+  },
+  pauseButton: {
+    position: 'absolute',
+    bottom: 100,
+    left: 20,
+    right: 20,
+    backgroundColor: '#2D4739',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  pauseButtonPaused: {
+    backgroundColor: '#8E8B82',
+  },
+  pauseButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   endButton: {
     position: 'absolute',
     bottom: 30,
@@ -644,6 +724,10 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
   },
   endButtonText: {
     color: '#FFFFFF',
