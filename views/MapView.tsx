@@ -59,7 +59,10 @@ const MapView: React.FC<MapViewProps> = ({ onParkSelect, onTrailSelect }) => {
     // Load Google Maps script
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
     
-    if (!apiKey || apiKey === 'demo') {
+    // Debug: Log API key status (first 10 chars only for security)
+    console.log('Google Maps API Key status:', apiKey ? `${apiKey.substring(0, 10)}...` : 'NOT SET');
+    
+    if (!apiKey || apiKey === 'demo' || apiKey === 'your_google_maps_api_key_here' || apiKey.trim() === '') {
       // No API key - use fallback map
       setError('Google Maps API key not configured. Using fallback view.');
       setLoading(false);
