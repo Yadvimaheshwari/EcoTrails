@@ -130,7 +130,20 @@ const MapScreen: React.FC = () => {
 
   const handleParkMarkerPress = async (park: Park) => {
     try {
+      // Defensive check: ensure park has required fields
+      if (!park || !park.id) {
+        Alert.alert('Error', 'Invalid park information');
+        return;
+      }
+
       const parkDetail = await ApiService.getParkDetail(park.id);
+      
+      // Defensive check: ensure park detail loaded successfully
+      if (!parkDetail || !parkDetail.id) {
+        Alert.alert('Error', 'Failed to load park details');
+        return;
+      }
+
       setSelectedPark(parkDetail);
       setShowParkSheet(true);
       
@@ -144,33 +157,60 @@ const MapScreen: React.FC = () => {
         });
       }
     } catch (err: any) {
+      console.error('Error loading park detail:', err);
       Alert.alert('Error', err.message || 'Failed to load park details');
     }
   };
 
   const handleViewPark = () => {
-    if (selectedPark) {
-      setShowParkSheet(false);
-      navigation.navigate('Explore' as never, {
-        screen: 'ParkDetail',
-        params: { parkId: selectedPark.id },
-      } as never);
+    // Defensive check: ensure selectedPark and parkId exist
+    if (!selectedPark || !selectedPark.id) {
+      Alert.alert('Error', 'Park information not available');
+      return;
     }
+
+    setShowParkSheet(false);
+    // Navigate to ParkDetail - NO AUTO-START
+    navigation.navigate('Explore' as never, {
+      screen: 'ParkDetail',
+      params: { parkId: selectedPark.id },
+    } as never);
   };
 
   const handleTrailPress = async (trail: Trail) => {
+    // Defensive check: ensure trail has required fields
+    if (!trail || !trail.id) {
+      Alert.alert('Error', 'Invalid trail information');
+      return;
+    }
+
     setSelectedTrail(trail);
     setShowTrailSheet(true);
+    
+    // Center map on trail
+    if (mapRef.current && trail.coordinates) {
+      mapRef.current.animateToRegion({
+        latitude: trail.coordinates.lat,
+        longitude: trail.coordinates.lng,
+        latitudeDelta: 0.1,
+        longitudeDelta: 0.1,
+      });
+    }
   };
 
   const handleViewTrail = () => {
-    if (selectedTrail) {
-      setShowTrailSheet(false);
-      navigation.navigate('Explore' as never, {
-        screen: 'TrailDetail',
-        params: { trailId: selectedTrail.id },
-      } as never);
+    // Defensive check: ensure selectedTrail and trailId exist
+    if (!selectedTrail || !selectedTrail.id) {
+      Alert.alert('Error', 'Trail information not available');
+      return;
     }
+
+    setShowTrailSheet(false);
+    // Navigate to TrailDetail - NO AUTO-START (hike can only start from TrailDetail screen)
+    navigation.navigate('Explore' as never, {
+      screen: 'TrailDetail',
+      params: { trailId: selectedTrail.id },
+    } as never);
   };
 
   if (loading) {
@@ -211,12 +251,24 @@ const MapScreen: React.FC = () => {
         <Text style={styles.title}>Map</Text>
         <Text style={styles.subtitle}>Explore trails and parks</Text>
         {locationPermission === 'denied' && (
-          <TouchableOpacity
-            style={styles.enableLocationButton}
-            onPress={requestLocationPermission}
-          >
-            <Text style={styles.enableLocationText}>Enable Location</Text>
-          </TouchableOpacity>
+          <View style={styles.locationPermissionBanner}>
+            <Text style={styles.locationPermissionText}>
+              📍 Location disabled - Map still works for exploring parks and trails
+            </Text>
+            <TouchableOpacity
+              style={styles.enableLocationButton}
+              onPress={requestLocationPermission}
+            >
+              <Text style={styles.enableLocationText}>Enable Location</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {parks.length === 0 && !loading && (
+          <View style={styles.emptyStateBanner}>
+            <Text style={styles.emptyStateText}>
+              No parks found. Try adjusting your search or filters.
+            </Text>
+          </View>
         )}
       </View>
 
@@ -225,47 +277,93 @@ const MapScreen: React.FC = () => {
         style={styles.map}
         provider={PROVIDER_GOOGLE}
         initialRegion={mapRegion}
+        region={mapRegion}
         onRegionChangeComplete={setMapRegion}
         showsUserLocation={locationPermission === 'granted'}
         showsMyLocationButton={locationPermission === 'granted'}
+        // Map always renders, even without location permission
+        loadingEnabled={true}
+        mapType="standard"
       >
-        {/* Park Markers */}
-        {parks.map((park) => (
-          <Marker
-            key={park.id}
-            coordinate={{
-              latitude: park.coordinates.lat,
-              longitude: park.coordinates.lng,
-            }}
-            title={park.name}
-            description={park.type}
-            onPress={() => handleParkMarkerPress(park)}
-          />
-        ))}
+        {/* Park Markers - Always visible, even without location permission */}
+        {parks.map((park) => {
+          // Defensive check: ensure park has coordinates
+          if (!park || !park.coordinates || !park.id) {
+            return null;
+          }
 
-        {/* Selected Park Boundary */}
-        {selectedPark?.boundary && (
+          return (
+            <Marker
+              key={park.id}
+              coordinate={{
+                latitude: park.coordinates.lat,
+                longitude: park.coordinates.lng,
+              }}
+              title={park.name}
+              description={park.type || 'Park'}
+              pinColor="#2D4739"
+              onPress={() => handleParkMarkerPress(park)}
+            />
+          );
+        })}
+
+        {/* Selected Park Boundary Polygon */}
+        {selectedPark?.boundary && selectedPark.boundary.length > 0 && (
           <Polygon
             coordinates={selectedPark.boundary}
-            fillColor="rgba(45, 71, 57, 0.2)"
+            fillColor="rgba(45, 71, 57, 0.15)"
             strokeColor="#2D4739"
             strokeWidth={2}
+            lineCap="round"
+            lineJoin="round"
           />
         )}
 
-        {/* Trail Polylines */}
-        {selectedPark?.trails?.map((trail) => {
-          // Generate simple polyline from waypoints or start/end
-          const coordinates = trail.waypoints && trail.waypoints.length > 0
-            ? trail.waypoints.map(wp => ({ latitude: wp.lat, longitude: wp.lng }))
-            : trail.trailhead_location
-            ? [
-                { latitude: trail.trailhead_location.lat, longitude: trail.trailhead_location.lng },
-                { latitude: trail.coordinates.lat, longitude: trail.coordinates.lng },
-              ]
-            : [];
+        {/* Trail Polylines for selected park */}
+        {selectedPark?.trails && selectedPark.trails.length > 0 && selectedPark.trails.map((trail) => {
+          // Defensive check: ensure trail has coordinates
+          if (!trail || !trail.coordinates) {
+            return null;
+          }
 
-          if (coordinates.length === 0) return null;
+          // Generate polyline from waypoints, trailhead/end, or fallback to simple line
+          let coordinates: Array<{ latitude: number; longitude: number }> = [];
+          
+          if (trail.waypoints && trail.waypoints.length > 0) {
+            // Use waypoints if available
+            coordinates = trail.waypoints.map(wp => ({ 
+              latitude: wp.lat, 
+              longitude: wp.lng 
+            }));
+          } else if (trail.trailhead_location) {
+            // Use trailhead to end point
+            coordinates = [
+              { 
+                latitude: trail.trailhead_location.lat, 
+                longitude: trail.trailhead_location.lng 
+              },
+              { 
+                latitude: trail.coordinates.lat, 
+                longitude: trail.coordinates.lng 
+              },
+            ];
+          } else {
+            // Fallback: create a simple line from park center to trail coordinates
+            if (selectedPark.coordinates) {
+              coordinates = [
+                { 
+                  latitude: selectedPark.coordinates.lat, 
+                  longitude: selectedPark.coordinates.lng 
+                },
+                { 
+                  latitude: trail.coordinates.lat, 
+                  longitude: trail.coordinates.lng 
+                },
+              ];
+            }
+          }
+
+          if (coordinates.length < 2) return null;
 
           return (
             <Polyline
@@ -273,6 +371,8 @@ const MapScreen: React.FC = () => {
               coordinates={coordinates}
               strokeColor="#2D4739"
               strokeWidth={3}
+              lineCap="round"
+              lineJoin="round"
               onPress={() => handleTrailPress(trail)}
             />
           );
@@ -333,18 +433,44 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#8E8B82',
   },
+  locationPermissionBanner: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: '#FFF3CD',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FFC107',
+  },
+  locationPermissionText: {
+    fontSize: 13,
+    color: '#856404',
+    marginBottom: 8,
+    lineHeight: 18,
+  },
   enableLocationButton: {
-    marginTop: 8,
     paddingVertical: 8,
     paddingHorizontal: 16,
-    backgroundColor: '#E2E8DE',
+    backgroundColor: '#2D4739',
     borderRadius: 8,
     alignSelf: 'flex-start',
   },
   enableLocationText: {
     fontSize: 14,
-    color: '#2D4739',
+    color: '#FFFFFF',
     fontWeight: '600',
+  },
+  emptyStateBanner: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: '#F9F9F7',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8DE',
+  },
+  emptyStateText: {
+    fontSize: 13,
+    color: '#8E8B82',
+    lineHeight: 18,
   },
   map: {
     flex: 1,
