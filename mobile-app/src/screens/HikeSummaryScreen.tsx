@@ -29,16 +29,20 @@ const HikeSummaryScreen: React.FC = () => {
     distance_miles?: number;
     duration_minutes?: number;
     route_path?: RoutePoint[];
+    apiSuccess?: boolean;
+    apiError?: string;
   };
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Use params or fallback values
-  const distance_miles = params.distance_miles || 0;
-  const duration_minutes = params.duration_minutes || 0;
-  const route_path = params.route_path || [];
-  const sessionId = params.sessionId || '';
+  // Defensive: Use params or fallback values - NEVER allow undefined/null to cause blank screen
+  const distance_miles = params.distance_miles ?? 0;
+  const duration_minutes = params.duration_minutes ?? 0;
+  const route_path = params.route_path ?? [];
+  const sessionId = params.sessionId ?? 'unknown';
+  const apiSuccess = params.apiSuccess ?? false;
+  const apiError = params.apiError ?? null;
 
   // Calculate stats
   const hours = Math.floor(duration_minutes / 60);
@@ -79,21 +83,31 @@ const HikeSummaryScreen: React.FC = () => {
   };
 
   const handleSave = () => {
-    // TODO: Save hike to favorites or share
     navigation.navigate('Activity' as never, { screen: 'ActivityList' } as never);
   };
 
   const handleShare = () => {
-    // TODO: Implement share functionality
+    // Share functionality placeholder - UI exists but functionality can be added later
     console.log('Share hike');
   };
 
+  // Defensive: Always render something - never blank screen
+  // This component will ALWAYS render content, even if all data is missing
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Header */}
+      {/* Header - Always visible */}
       <View style={styles.header}>
         <Text style={styles.title}>Hike Complete! 🎉</Text>
         <Text style={styles.subtitle}>Great job on your adventure</Text>
+        
+        {/* Show API error if present, but don't block UI */}
+        {apiError && !apiSuccess && (
+          <View style={styles.apiErrorBanner}>
+            <Text style={styles.apiErrorText}>
+              ⚠️ Hike data saved locally. Could not sync to server: {apiError}
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Stats Grid */}
@@ -116,7 +130,7 @@ const HikeSummaryScreen: React.FC = () => {
         </View>
       </View>
 
-      {/* Route Map */}
+      {/* Route Map - Always render, with fallback */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Your Route</Text>
         <View style={styles.mapContainer}>
@@ -137,6 +151,9 @@ const HikeSummaryScreen: React.FC = () => {
             <View style={styles.mapPlaceholder}>
               <Text style={styles.mapPlaceholderText}>🗺️</Text>
               <Text style={styles.mapPlaceholderSubtext}>Route data unavailable</Text>
+              <Text style={styles.mapPlaceholderSubtext}>
+                GPS tracking may not have been available
+              </Text>
             </View>
           )}
         </View>

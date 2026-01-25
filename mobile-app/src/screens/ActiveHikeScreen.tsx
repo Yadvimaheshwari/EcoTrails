@@ -12,6 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
+import * as Location from 'expo-location';
 import EcoDroidService from '../services/EcoDroidService';
 import WearableService from '../services/WearableService';
 import GeminiCompanionService, { CompanionMessage } from '../services/GeminiCompanionService';
@@ -59,8 +60,12 @@ const ActiveHikeScreen: React.FC = () => {
   const [companionInsights, setCompanionInsights] = useState<CompanionMessage[]>([]);
   const [proactiveSuggestion, setProactiveSuggestion] = useState<CompanionMessage | null>(null);
   const [hikeStartTime] = useState(Date.now());
+  const [pausedTime, setPausedTime] = useState(0); // Total time paused in milliseconds
+  const [pauseStartTime, setPauseStartTime] = useState<number | null>(null);
   const [totalDistance, setTotalDistance] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [elapsedTime, setElapsedTime] = useState(0); // Active time in milliseconds
+  const locationTrackingInterval = useRef<NodeJS.Timeout | null>(null);
   const mapRef = useRef<MapView>(null);
 
   // Helper function to get current season
@@ -70,6 +75,74 @@ const ActiveHikeScreen: React.FC = () => {
     if (month >= 5 && month <= 7) return 'summer';
     if (month >= 8 && month <= 10) return 'fall';
     return 'winter';
+  };
+
+  // Location tracking effect
+  useEffect(() => {
+    if (!isPaused) {
+      // Start location tracking when not paused
+      locationTrackingInterval.current = setInterval(async () => {
+        try {
+          const location = await Location.getCurrentPositionAsync({});
+          const newPoint = {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+          };
+          
+          setCurrentLocation({ lat: newPoint.latitude, lng: newPoint.longitude });
+          setRoutePath(prev => [...prev, newPoint]);
+          
+          // Update distance (simple calculation - in production, use proper distance calculation)
+          if (routePath.length > 0) {
+            const lastPoint = routePath[routePath.length - 1];
+            const distance = calculateDistance(
+              lastPoint.latitude,
+              lastPoint.longitude,
+              newPoint.latitude,
+              newPoint.longitude
+            );
+            setTotalDistance(prev => prev + distance);
+          }
+          
+          // Update map
+          if (mapRef.current) {
+            mapRef.current.animateToRegion({
+              latitude: newPoint.latitude,
+              longitude: newPoint.longitude,
+              latitudeDelta: 0.01,
+              longitudeDelta: 0.01,
+            });
+          }
+        } catch (err) {
+          console.error('Error getting location:', err);
+        }
+      }, 5000);
+    } else {
+      // Stop tracking when paused
+      if (locationTrackingInterval.current) {
+        clearInterval(locationTrackingInterval.current);
+        locationTrackingInterval.current = null;
+      }
+    }
+    
+    return () => {
+      if (locationTrackingInterval.current) {
+        clearInterval(locationTrackingInterval.current);
+      }
+    };
+  }, [isPaused, routePath]);
+
+  // Helper function to calculate distance between two points (Haversine formula)
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 3959; // Earth's radius in miles
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
   };
 
   useEffect(() => {
@@ -213,8 +286,24 @@ const ActiveHikeScreen: React.FC = () => {
 
     return () => {
       clearInterval(locationInterval);
+      if (locationTrackingInterval.current) {
+        clearInterval(locationTrackingInterval.current);
+      }
     };
   }, []);
+
+  // Update elapsed time display
+  useEffect(() => {
+    const timeInterval = setInterval(() => {
+      if (!isPaused) {
+        const now = Date.now();
+        const activeTime = now - hikeStartTime - pausedTime;
+        setElapsedTime(activeTime);
+      }
+    }, 1000);
+
+    return () => clearInterval(timeInterval);
+  }, [hikeStartTime, pausedTime, isPaused]);
 
   const handleEndHike = () => {
     Alert.alert(
@@ -226,50 +315,75 @@ const ActiveHikeScreen: React.FC = () => {
           text: 'End',
           style: 'destructive',
           onPress: async () => {
+            // Defensive: Always navigate to HikeSummary, even if API fails
+            let apiSuccess = false;
+            let apiError: string | null = null;
+            
             try {
               // Stop tracking
               EcoDroidService.endSession();
               
-              // Calculate duration
-              const durationMinutes = Math.floor((Date.now() - hikeStartTime) / 60000);
+              // Stop location tracking interval
+              if (locationTrackingInterval.current) {
+                clearInterval(locationTrackingInterval.current);
+                locationTrackingInterval.current = null;
+              }
               
-              // End session via API
-              await ApiService.endHikeSession(sessionId, {
-                distance_miles: totalDistance,
-                duration_minutes: durationMinutes,
-                route_path: routePath.map((point, index) => ({
-                  lat: point.latitude,
-                  lng: point.longitude,
-                  timestamp: new Date(hikeStartTime + index * 5000).toISOString(),
-                })),
-              });
+              // Calculate final paused time if currently paused
+              let finalPausedTime = pausedTime;
+              if (isPaused && pauseStartTime) {
+                finalPausedTime += Date.now() - pauseStartTime;
+              }
+              
+              // Calculate active duration (excluding paused time)
+              const activeDurationMs = Date.now() - hikeStartTime - finalPausedTime;
+              const durationMinutes = Math.floor(activeDurationMs / 60000);
+              
+              // End session via API (but don't block navigation on failure)
+              try {
+                await ApiService.endHikeSession(sessionId, {
+                  distance_miles: totalDistance,
+                  duration_minutes: durationMinutes,
+                  route_path: routePath.map((point, index) => ({
+                    lat: point.latitude,
+                    lng: point.longitude,
+                    timestamp: new Date(hikeStartTime + index * 5000).toISOString(),
+                  })),
+                });
+                apiSuccess = true;
+              } catch (apiErr: any) {
+                console.error('Error ending hike session via API:', apiErr);
+                apiError = apiErr.message || 'Failed to save hike to server';
+                // Continue to navigate even if API fails
+              }
 
-              // Navigate to HikeSummary
+              // ALWAYS navigate to HikeSummary - defensive navigation
+              // Pass error info so HikeSummary can show it if needed
               navigation.navigate('Activity' as never, {
                 screen: 'HikeSummary',
                 params: {
-                  sessionId,
+                  sessionId: sessionId || 'unknown',
                   distance_miles: totalDistance,
                   duration_minutes: durationMinutes,
                   route_path: routePath,
+                  apiSuccess,
+                  apiError,
                 },
               } as never);
             } catch (error: any) {
-              console.error('Error ending hike:', error);
-              Alert.alert(
-                'Error',
-                error.message || 'Failed to end hike. Please try again.',
-                [
-                  {
-                    text: 'Retry',
-                    onPress: handleEndHike,
-                  },
-                  {
-                    text: 'Cancel',
-                    style: 'cancel',
-                  },
-                ]
-              );
+              // Even if something catastrophic happens, navigate to summary with fallback data
+              console.error('Critical error ending hike:', error);
+              navigation.navigate('Activity' as never, {
+                screen: 'HikeSummary',
+                params: {
+                  sessionId: sessionId || 'unknown',
+                  distance_miles: totalDistance || 0,
+                  duration_minutes: Math.floor((Date.now() - hikeStartTime) / 60000),
+                  route_path: routePath || [],
+                  apiSuccess: false,
+                  apiError: error.message || 'Unknown error occurred',
+                },
+              } as never);
             }
           },
         },
@@ -278,8 +392,33 @@ const ActiveHikeScreen: React.FC = () => {
   };
 
   const handlePauseResume = () => {
-    setIsPaused(!isPaused);
-    // TODO: Pause/resume location tracking
+    if (isPaused) {
+      // Resuming: add the pause duration to total paused time
+      if (pauseStartTime) {
+        const pauseDuration = Date.now() - pauseStartTime;
+        setPausedTime(prev => prev + pauseDuration);
+        setPauseStartTime(null);
+      }
+      setIsPaused(false);
+      
+      // Resume location tracking
+      if (locationTrackingInterval.current) {
+        clearInterval(locationTrackingInterval.current);
+      }
+      locationTrackingInterval.current = setInterval(() => {
+        // Location tracking logic here
+      }, 5000);
+    } else {
+      // Pausing: record when pause started
+      setPauseStartTime(Date.now());
+      setIsPaused(true);
+      
+      // Stop location tracking
+      if (locationTrackingInterval.current) {
+        clearInterval(locationTrackingInterval.current);
+        locationTrackingInterval.current = null;
+      }
+    }
   };
 
   return (
@@ -359,6 +498,39 @@ const ActiveHikeScreen: React.FC = () => {
           ))}
         </View>
       )}
+
+      {/* Stats Overlay */}
+      <View style={styles.statsOverlay}>
+        <View style={styles.statItem}>
+          <Text style={styles.statLabel}>Time</Text>
+          <Text style={styles.statValue}>
+            {isPaused ? '⏸️ ' : ''}
+            {Math.floor(elapsedTime / 60000)}:{(Math.floor(elapsedTime / 1000) % 60).toString().padStart(2, '0')}
+          </Text>
+        </View>
+        <View style={styles.statItem}>
+          <Text style={styles.statLabel}>Distance</Text>
+          <Text style={styles.statValue}>{totalDistance.toFixed(2)} mi</Text>
+        </View>
+        <View style={styles.statItem}>
+          <Text style={styles.statLabel}>Pace</Text>
+          <Text style={styles.statValue}>
+            {totalDistance > 0 && elapsedTime > 0
+              ? (Math.floor(elapsedTime / 1000 / 60) / totalDistance).toFixed(1)
+              : '0.0'} min/mi
+          </Text>
+        </View>
+      </View>
+
+      {/* Pause/Resume Button */}
+      <TouchableOpacity
+        style={[styles.pauseButton, isPaused && styles.pauseButtonPaused]}
+        onPress={handlePauseResume}
+      >
+        <Text style={styles.pauseButtonText}>
+          {isPaused ? '▶ Resume' : '⏸ Pause'}
+        </Text>
+      </TouchableOpacity>
 
       {/* End Hike Button */}
       <TouchableOpacity style={styles.endButton} onPress={handleEndHike}>
