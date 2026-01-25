@@ -63,6 +63,31 @@ export interface EndHikeSessionRequest {
   distance_miles: number;
   duration_minutes: number;
   route_path?: Array<{ lat: number; lng: number; timestamp: string }>;
+  elevation_gain_ft?: number;
+  calories_burned?: number;
+}
+
+export interface HikeHistoryItem {
+  id: string;
+  session_id: string;
+  trail_id: string;
+  park_id: string;
+  park_name: string;
+  trail_name: string;
+  distance_miles: number;
+  duration_minutes: number;
+  elevation_gain_ft?: number;
+  calories_burned?: number;
+  start_time: string;
+  end_time: string;
+  created_at: string;
+}
+
+export interface UserStatistics {
+  totalHikes: number;
+  totalMiles: number;
+  totalElevation: number;
+  averagePace: number;
 }
 
 class ApiService {
@@ -259,6 +284,55 @@ class ApiService {
     } catch (error: any) {
       console.error('Error fetching hike session:', error);
       throw error;
+    }
+  }
+
+  // Hike History API
+  async getHikeHistory(userId?: string): Promise<HikeHistoryItem[]> {
+    try {
+      // For now, use mock data. In future, replace with API call:
+      // const response = await axios.get(`${API_BASE_URL}/api/v1/users/${userId}/hikes`);
+      // return response.data;
+      
+      // Mock hike history data - return empty array for now
+      return [];
+    } catch (error: any) {
+      console.error('Error fetching hike history:', error);
+      // Return empty array on error instead of throwing
+      return [];
+    }
+  }
+
+  // User Statistics API
+  async getUserStatistics(userId?: string): Promise<UserStatistics> {
+    try {
+      // For now, calculate from mock history. In future, replace with API call:
+      // const response = await axios.get(`${API_BASE_URL}/api/v1/users/${userId}/statistics`);
+      // return response.data;
+      
+      const history = await this.getHikeHistory(userId);
+      
+      const totalHikes = history.length;
+      const totalMiles = history.reduce((sum, hike) => sum + (hike.distance_miles || 0), 0);
+      const totalElevation = history.reduce((sum, hike) => sum + (hike.elevation_gain_ft || 0), 0);
+      const totalMinutes = history.reduce((sum, hike) => sum + (hike.duration_minutes || 0), 0);
+      const averagePace = totalMiles > 0 && totalMinutes > 0 ? totalMinutes / totalMiles : 0;
+      
+      return {
+        totalHikes,
+        totalMiles,
+        totalElevation,
+        averagePace,
+      };
+    } catch (error: any) {
+      console.error('Error fetching user statistics:', error);
+      // Return zero stats on error
+      return {
+        totalHikes: 0,
+        totalMiles: 0,
+        totalElevation: 0,
+        averagePace: 0,
+      };
     }
   }
 
