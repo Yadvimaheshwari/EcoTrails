@@ -846,13 +846,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: '#F9F9F7',
     zIndex: 1000,
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#F9F9F7',
-    zIndex: 1000,
   },
 });
 
