@@ -39,10 +39,12 @@ const ActiveHikeScreen: React.FC = () => {
   type RouteParams = {
     sessionId: string;
     parkName: string;
+    parkId?: string;
+    trailId?: string;
     deviceId: string | null; // Optional - EcoDroid device not required
   };
   const params = (route.params || {}) as RouteParams;
-  const { sessionId, parkName, deviceId } = params;
+  const { sessionId, parkName, parkId, trailId, deviceId } = params;
   
   // Safety check - sessionId and parkName are required, deviceId is optional
   if (!sessionId || !parkName) {
