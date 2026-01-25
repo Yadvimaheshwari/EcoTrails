@@ -10,19 +10,22 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  FlatList,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import ApiService from '../services/ApiService';
+import ApiService, { HikeHistoryItem, UserStatistics } from '../services/ApiService';
 
 const StatisticsScreen: React.FC = () => {
   const navigation = useNavigation();
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState<UserStatistics>({
     totalHikes: 0,
     totalMiles: 0,
     totalElevation: 0,
     averagePace: 0,
   });
+  const [hikeHistory, setHikeHistory] = useState<HikeHistoryItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadStatistics();
@@ -31,25 +34,86 @@ const StatisticsScreen: React.FC = () => {
   const loadStatistics = async () => {
     try {
       setLoading(true);
-      // TODO: Replace with actual API call
-      // const response = await ApiService.getUserStatistics();
-      // setStats(response.data);
+      setError(null);
       
-      // Mock data for now
-      setTimeout(() => {
-        setStats({
-          totalHikes: 0,
-          totalMiles: 0,
-          totalElevation: 0,
-          averagePace: 0,
-        });
-        setLoading(false);
-      }, 500);
-    } catch (error) {
-      console.error('Error loading statistics:', error);
+      // Fetch statistics and history in parallel
+      const [statisticsData, historyData] = await Promise.all([
+        ApiService.getUserStatistics('current-user-id'), // TODO: Get from auth
+        ApiService.getHikeHistory('current-user-id'), // TODO: Get from auth
+      ]);
+      
+      setStats(statisticsData);
+      setHikeHistory(historyData);
+    } catch (err: any) {
+      console.error('Error loading statistics:', err);
+      setError(err.message || 'Failed to load statistics');
+      // Set zero stats on error
+      setStats({
+        totalHikes: 0,
+        totalMiles: 0,
+        totalElevation: 0,
+        averagePace: 0,
+      });
+      setHikeHistory([]);
+    } finally {
       setLoading(false);
     }
   };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric' 
+    });
+  };
+
+  const formatDuration = (minutes: number) => {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    if (hours > 0) {
+      return `${hours}h ${mins}m`;
+    }
+    return `${mins}m`;
+  };
+
+  const renderHikeItem = ({ item }: { item: HikeHistoryItem }) => (
+    <TouchableOpacity
+      style={styles.hikeItem}
+      onPress={() => {
+        // Navigate to hike detail if needed
+        navigation.navigate('Activity' as never, {
+          screen: 'HikeSummary',
+          params: {
+            sessionId: item.session_id,
+            distance_miles: item.distance_miles,
+            duration_minutes: item.duration_minutes,
+            route_path: [],
+          },
+        } as never);
+      }}
+    >
+      <View style={styles.hikeItemHeader}>
+        <Text style={styles.hikeItemTrail}>{item.trail_name || 'Unknown Trail'}</Text>
+        <Text style={styles.hikeItemDate}>{formatDate(item.start_time)}</Text>
+      </View>
+      <Text style={styles.hikeItemPark}>{item.park_name}</Text>
+      <View style={styles.hikeItemStats}>
+        <Text style={styles.hikeItemStat}>
+          {item.distance_miles.toFixed(1)} mi
+        </Text>
+        <Text style={styles.hikeItemStat}>
+          {formatDuration(item.duration_minutes)}
+        </Text>
+        {item.elevation_gain_ft && (
+          <Text style={styles.hikeItemStat}>
+            {item.elevation_gain_ft} ft
+          </Text>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
 
   if (loading) {
     return (
@@ -105,15 +169,35 @@ const StatisticsScreen: React.FC = () => {
             </View>
           </View>
 
-          {/* Analytics Placeholder */}
+          {/* Hike History */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Analytics</Text>
-            <View style={styles.analyticsPlaceholder}>
-              <Text style={styles.analyticsText}>📈</Text>
-              <Text style={styles.analyticsSubtext}>Detailed analytics coming soon</Text>
-            </View>
+            <Text style={styles.sectionTitle}>Recent Hikes</Text>
+            {hikeHistory.length === 0 ? (
+              <View style={styles.emptyHistoryState}>
+                <Text style={styles.emptyHistoryText}>
+                  No hike history yet. Start recording hikes to see them here.
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={hikeHistory}
+                renderItem={renderHikeItem}
+                keyExtractor={(item) => item.id}
+                scrollEnabled={false}
+                ListFooterComponent={<View style={{ height: 20 }} />}
+              />
+            )}
           </View>
         </>
+      )}
+      
+      {error && (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorText}>⚠️ {error}</Text>
+          <TouchableOpacity onPress={loadStatistics}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
       )}
     </ScrollView>
   );
@@ -243,6 +327,74 @@ const styles = StyleSheet.create({
   analyticsSubtext: {
     fontSize: 14,
     color: '#8E8B82',
+  },
+  hikeItem: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8DE',
+    backgroundColor: '#FFFFFF',
+  },
+  hikeItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  hikeItemTrail: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2D4739',
+    flex: 1,
+  },
+  hikeItemDate: {
+    fontSize: 14,
+    color: '#8E8B82',
+  },
+  hikeItemPark: {
+    fontSize: 14,
+    color: '#8E8B82',
+    marginBottom: 8,
+  },
+  hikeItemStats: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  hikeItemStat: {
+    fontSize: 14,
+    color: '#2D4739',
+    fontWeight: '500',
+  },
+  emptyHistoryState: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyHistoryText: {
+    fontSize: 14,
+    color: '#8E8B82',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  errorBanner: {
+    margin: 20,
+    padding: 16,
+    backgroundColor: '#FFF3CD',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FFC107',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#856404',
+    flex: 1,
+  },
+  retryText: {
+    fontSize: 14,
+    color: '#2D4739',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
 });
 

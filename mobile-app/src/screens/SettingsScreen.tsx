@@ -15,26 +15,58 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
 
+interface UserProfile {
+  name: string;
+  email: string;
+  memberSince: string;
+}
+
 const SettingsScreen: React.FC = () => {
   const navigation = useNavigation();
   const [locationEnabled, setLocationEnabled] = useState(false);
   const [fitnessEnabled, setFitnessEnabled] = useState(false);
+  const [profile, setProfile] = useState<UserProfile>({
+    name: 'Hiker',
+    email: 'hiker@example.com',
+    memberSince: new Date().toISOString(),
+  });
 
   React.useEffect(() => {
     checkPermissions();
+    loadProfile();
   }, []);
+
+  const loadProfile = async () => {
+    try {
+      // TODO: Replace with actual API call
+      // const response = await ApiService.getUserProfile();
+      // setProfile(response.data);
+      
+      // Mock profile data for now
+      setProfile({
+        name: 'Hiker',
+        email: 'hiker@example.com',
+        memberSince: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(), // 90 days ago
+      });
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    }
+  };
 
   const checkPermissions = async () => {
     try {
       const locationStatus = await Location.getForegroundPermissionsAsync();
       setLocationEnabled(locationStatus.granted);
-      // TODO: Check fitness/motion permissions
+      
+      // Check motion/fitness permissions (stubbed for now)
+      // In production, use expo-sensors or react-native-permissions
+      setFitnessEnabled(false);
     } catch (error) {
       console.error('Error checking permissions:', error);
     }
   };
 
-  const handleClearCache = () => {
+  const handleClearCache = async () => {
     Alert.alert(
       'Clear Cache',
       'This will clear all cached data. Are you sure?',
@@ -43,16 +75,23 @@ const SettingsScreen: React.FC = () => {
         {
           text: 'Clear',
           style: 'destructive',
-          onPress: () => {
-            // TODO: Clear cache
-            Alert.alert('Success', 'Cache cleared');
+          onPress: async () => {
+            try {
+              // Stub: Clear cache implementation
+              // In production: await AsyncStorage.clear() or similar
+              console.log('Cache cleared');
+              Alert.alert('Success', 'Cache cleared successfully');
+            } catch (error) {
+              console.error('Error clearing cache:', error);
+              Alert.alert('Error', 'Failed to clear cache');
+            }
           },
         },
       ]
     );
   };
 
-  const handleResetTutorial = () => {
+  const handleResetTutorial = async () => {
     Alert.alert(
       'Reset Tutorial',
       'This will show the onboarding tutorial again. Continue?',
@@ -60,9 +99,16 @@ const SettingsScreen: React.FC = () => {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Reset',
-          onPress: () => {
-            // TODO: Reset tutorial
-            Alert.alert('Success', 'Tutorial will show on next app launch');
+          onPress: async () => {
+            try {
+              // Stub: Reset tutorial flag
+              // In production: await AsyncStorage.setItem('tutorial_completed', 'false')
+              console.log('Tutorial reset');
+              Alert.alert('Success', 'Tutorial will show on next app launch');
+            } catch (error) {
+              console.error('Error resetting tutorial:', error);
+              Alert.alert('Error', 'Failed to reset tutorial');
+            }
           },
         },
       ]
@@ -78,9 +124,18 @@ const SettingsScreen: React.FC = () => {
         {
           text: 'Sign Out',
           style: 'destructive',
-          onPress: () => {
-            // TODO: Implement logout
-            navigation.navigate('Profile' as never);
+          onPress: async () => {
+            try {
+              // Stub: Logout implementation
+              // In production: await AuthService.logout(), clear tokens, etc.
+              console.log('User logged out');
+              // Navigate to login/auth screen
+              // For now, just navigate to Profile
+              navigation.navigate('Profile' as never);
+            } catch (error) {
+              console.error('Error logging out:', error);
+              Alert.alert('Error', 'Failed to sign out');
+            }
           },
         },
       ]
@@ -96,6 +151,25 @@ const SettingsScreen: React.FC = () => {
       {/* Profile Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Profile</Text>
+        <View style={styles.profileCard}>
+          <View style={styles.profileHeader}>
+            <View style={styles.profileAvatar}>
+              <Text style={styles.profileAvatarText}>
+                {profile.name.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+            <View style={styles.profileInfo}>
+              <Text style={styles.profileName}>{profile.name}</Text>
+              <Text style={styles.profileEmail}>{profile.email}</Text>
+            </View>
+          </View>
+          <Text style={styles.profileMemberSince}>
+            Member since {new Date(profile.memberSince).toLocaleDateString('en-US', { 
+              month: 'long', 
+              year: 'numeric' 
+            })}
+          </Text>
+        </View>
         <TouchableOpacity style={styles.settingItem}>
           <Text style={styles.settingLabel}>Edit Profile</Text>
           <Text style={styles.settingArrow}>→</Text>
@@ -224,6 +298,48 @@ const styles = StyleSheet.create({
   },
   logoutText: {
     color: '#D32F2F',
+  },
+  profileCard: {
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8DE',
+  },
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  profileAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#2D4739',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  profileAvatarText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  profileInfo: {
+    flex: 1,
+  },
+  profileName: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#2D4739',
+    marginBottom: 4,
+  },
+  profileEmail: {
+    fontSize: 14,
+    color: '#8E8B82',
+  },
+  profileMemberSince: {
+    fontSize: 12,
+    color: '#8E8B82',
+    fontStyle: 'italic',
   },
 });
 

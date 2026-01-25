@@ -13,20 +13,140 @@ import {
   Alert,
 } from 'react-native';
 
+// Stub interfaces for health integrations
+interface HealthService {
+  isAvailable(): Promise<boolean>;
+  isConnected(): Promise<boolean>;
+  connect(): Promise<boolean>;
+  disconnect(): Promise<void>;
+  getStatus(): Promise<'connected' | 'disconnected' | 'unavailable'>;
+}
+
+// Stub implementations (real implementations would use react-native-health or similar)
+const AppleHealthService: HealthService = {
+  async isAvailable() {
+    // Stub: Check if Apple Health is available on iOS
+    return Promise.resolve(false); // Will be true on iOS with HealthKit
+  },
+  async isConnected() {
+    // Stub: Check connection status
+    return Promise.resolve(false);
+  },
+  async connect() {
+    // Stub: Request HealthKit permissions and connect
+    return Promise.resolve(true);
+  },
+  async disconnect() {
+    // Stub: Disconnect from HealthKit
+    return Promise.resolve();
+  },
+  async getStatus() {
+    const available = await this.isAvailable();
+    if (!available) return 'unavailable';
+    const connected = await this.isConnected();
+    return connected ? 'connected' : 'disconnected';
+  },
+};
+
+const GoogleFitService: HealthService = {
+  async isAvailable() {
+    // Stub: Check if Google Fit is available on Android
+    return Promise.resolve(false); // Will be true on Android with Google Fit
+  },
+  async isConnected() {
+    // Stub: Check connection status
+    return Promise.resolve(false);
+  },
+  async connect() {
+    // Stub: Request Google Fit permissions and connect
+    return Promise.resolve(true);
+  },
+  async disconnect() {
+    // Stub: Disconnect from Google Fit
+    return Promise.resolve();
+  },
+  async getStatus() {
+    const available = await this.isAvailable();
+    if (!available) return 'unavailable';
+    const connected = await this.isConnected();
+    return connected ? 'connected' : 'disconnected';
+  },
+};
+
 const DeviceManagementScreen: React.FC = () => {
-  const [appleHealthConnected, setAppleHealthConnected] = useState(false);
-  const [googleFitConnected, setGoogleFitConnected] = useState(false);
+  const [appleHealthStatus, setAppleHealthStatus] = useState<'connected' | 'disconnected' | 'unavailable'>('unavailable');
+  const [googleFitStatus, setGoogleFitStatus] = useState<'connected' | 'disconnected' | 'unavailable'>('unavailable');
   const [dataSyncEnabled, setDataSyncEnabled] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const handleConnectAppleHealth = () => {
-    // TODO: Implement Apple Health connection
-    Alert.alert('Apple Health', 'Connection feature coming soon');
+  React.useEffect(() => {
+    checkDeviceStatus();
+  }, []);
+
+  const checkDeviceStatus = async () => {
+    try {
+      setLoading(true);
+      const [appleStatus, googleStatus] = await Promise.all([
+        AppleHealthService.getStatus(),
+        GoogleFitService.getStatus(),
+      ]);
+      setAppleHealthStatus(appleStatus);
+      setGoogleFitStatus(googleStatus);
+    } catch (error) {
+      console.error('Error checking device status:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleConnectGoogleFit = () => {
-    // TODO: Implement Google Fit connection
-    Alert.alert('Google Fit', 'Connection feature coming soon');
+  const handleConnectAppleHealth = async () => {
+    try {
+      if (appleHealthStatus === 'connected') {
+        // Disconnect
+        await AppleHealthService.disconnect();
+        setAppleHealthStatus('disconnected');
+        Alert.alert('Disconnected', 'Apple Health has been disconnected');
+      } else {
+        // Connect
+        const success = await AppleHealthService.connect();
+        if (success) {
+          setAppleHealthStatus('connected');
+          Alert.alert('Connected', 'Apple Health has been connected successfully');
+        } else {
+          Alert.alert('Error', 'Failed to connect to Apple Health');
+        }
+      }
+    } catch (error: any) {
+      console.error('Error connecting to Apple Health:', error);
+      Alert.alert('Error', error.message || 'Failed to connect to Apple Health');
+    }
   };
+
+  const handleConnectGoogleFit = async () => {
+    try {
+      if (googleFitStatus === 'connected') {
+        // Disconnect
+        await GoogleFitService.disconnect();
+        setGoogleFitStatus('disconnected');
+        Alert.alert('Disconnected', 'Google Fit has been disconnected');
+      } else {
+        // Connect
+        const success = await GoogleFitService.connect();
+        if (success) {
+          setGoogleFitStatus('connected');
+          Alert.alert('Connected', 'Google Fit has been connected successfully');
+        } else {
+          Alert.alert('Error', 'Failed to connect to Google Fit');
+        }
+      }
+    } catch (error: any) {
+      console.error('Error connecting to Google Fit:', error);
+      Alert.alert('Error', error.message || 'Failed to connect to Google Fit');
+    }
+  };
+
+  const appleHealthConnected = appleHealthStatus === 'connected';
+  const googleFitConnected = googleFitStatus === 'connected';
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -61,33 +181,50 @@ const DeviceManagementScreen: React.FC = () => {
             <View
               style={[
                 styles.statusBadge,
-                appleHealthConnected ? styles.statusConnected : styles.statusDisconnected,
+                appleHealthStatus === 'connected' 
+                  ? styles.statusConnected 
+                  : appleHealthStatus === 'unavailable'
+                  ? styles.statusUnavailable
+                  : styles.statusDisconnected,
               ]}
             >
               <Text style={styles.statusText}>
-                {appleHealthConnected ? 'Connected' : 'Not Connected'}
+                {appleHealthStatus === 'connected' 
+                  ? 'Connected' 
+                  : appleHealthStatus === 'unavailable'
+                  ? 'Unavailable'
+                  : 'Not Connected'}
               </Text>
             </View>
           </View>
           <Text style={styles.deviceDescription}>
             Sync heart rate, steps, and workout data from Apple Health
           </Text>
-          <TouchableOpacity
-            style={[
-              styles.connectButton,
-              appleHealthConnected && styles.connectButtonConnected,
-            ]}
-            onPress={handleConnectAppleHealth}
-          >
-            <Text
+          {appleHealthStatus !== 'unavailable' && (
+            <TouchableOpacity
               style={[
-                styles.connectButtonText,
-                appleHealthConnected && styles.connectButtonTextConnected,
+                styles.connectButton,
+                appleHealthConnected && styles.connectButtonConnected,
+                loading && styles.connectButtonDisabled,
               ]}
+              onPress={handleConnectAppleHealth}
+              disabled={loading}
             >
-              {appleHealthConnected ? 'Disconnect' : 'Connect'}
+              <Text
+                style={[
+                  styles.connectButtonText,
+                  appleHealthConnected && styles.connectButtonTextConnected,
+                ]}
+              >
+                {appleHealthConnected ? 'Disconnect' : 'Connect'}
+              </Text>
+            </TouchableOpacity>
+          )}
+          {appleHealthStatus === 'unavailable' && (
+            <Text style={styles.unavailableText}>
+              Apple Health is only available on iOS devices
             </Text>
-          </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -100,33 +237,50 @@ const DeviceManagementScreen: React.FC = () => {
             <View
               style={[
                 styles.statusBadge,
-                googleFitConnected ? styles.statusConnected : styles.statusDisconnected,
+                googleFitStatus === 'connected' 
+                  ? styles.statusConnected 
+                  : googleFitStatus === 'unavailable'
+                  ? styles.statusUnavailable
+                  : styles.statusDisconnected,
               ]}
             >
               <Text style={styles.statusText}>
-                {googleFitConnected ? 'Connected' : 'Not Connected'}
+                {googleFitStatus === 'connected' 
+                  ? 'Connected' 
+                  : googleFitStatus === 'unavailable'
+                  ? 'Unavailable'
+                  : 'Not Connected'}
               </Text>
             </View>
           </View>
           <Text style={styles.deviceDescription}>
             Sync heart rate, steps, and workout data from Google Fit
           </Text>
-          <TouchableOpacity
-            style={[
-              styles.connectButton,
-              googleFitConnected && styles.connectButtonConnected,
-            ]}
-            onPress={handleConnectGoogleFit}
-          >
-            <Text
+          {googleFitStatus !== 'unavailable' && (
+            <TouchableOpacity
               style={[
-                styles.connectButtonText,
-                googleFitConnected && styles.connectButtonTextConnected,
+                styles.connectButton,
+                googleFitConnected && styles.connectButtonConnected,
+                loading && styles.connectButtonDisabled,
               ]}
+              onPress={handleConnectGoogleFit}
+              disabled={loading}
             >
-              {googleFitConnected ? 'Disconnect' : 'Connect'}
+              <Text
+                style={[
+                  styles.connectButtonText,
+                  googleFitConnected && styles.connectButtonTextConnected,
+                ]}
+              >
+                {googleFitConnected ? 'Disconnect' : 'Connect'}
+              </Text>
+            </TouchableOpacity>
+          )}
+          {googleFitStatus === 'unavailable' && (
+            <Text style={styles.unavailableText}>
+              Google Fit is only available on Android devices
             </Text>
-          </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -238,6 +392,9 @@ const styles = StyleSheet.create({
   statusDisconnected: {
     backgroundColor: '#E2E8DE',
   },
+  statusUnavailable: {
+    backgroundColor: '#F5F5F5',
+  },
   statusText: {
     fontSize: 12,
     fontWeight: '600',
@@ -268,6 +425,15 @@ const styles = StyleSheet.create({
   },
   connectButtonTextConnected: {
     color: '#2D4739',
+  },
+  connectButtonDisabled: {
+    opacity: 0.5,
+  },
+  unavailableText: {
+    fontSize: 13,
+    color: '#8E8B82',
+    fontStyle: 'italic',
+    marginTop: 8,
   },
   infoCard: {
     padding: 20,
