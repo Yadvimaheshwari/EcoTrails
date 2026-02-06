@@ -29,7 +29,7 @@ class SatelliteImageryService:
         start_date, end_date = date_range
         
         # Use Gemini with Google Search grounding for satellite context
-        client = genai.Client(api_key=self.api_key, http_options={'api_version': 'v1alpha'})
+        client = genai.Client(api_key=self.api_key)
         
         # In production, use actual satellite API
         # For now, return metadata that can be used with Gemini's grounding

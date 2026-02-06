@@ -1,0 +1,1267 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { format } from 'date-fns';
+import { BackgroundSystem } from '@/components/BackgroundSystem';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ReflectionModal } from '@/components/ReflectionModal';
+import { IntelligentJournal } from '@/components/IntelligentJournal';
+import { AIFeaturesHub } from '@/components/AIFeaturesHub';
+import { getHikes, getHike, getJournalEntries, getFavorites, getUserAchievements, uploadHikeMedia, updateHike, unfavoritePlace } from '@/lib/api';
+import { validateResponse, HikesResponseSchema, HikeResponseSchema, JournalEntriesResponseSchema, MediaResponseSchema } from '@/lib/validation';
+import { useAuth } from '@/contexts/AuthContext';
+import type { Hike, JournalEntry, Media } from '@/types';
+
+type JournalView = 'timeline' | 'upcoming' | 'active' | 'completed' | 'discoveries' | 'achievements';
+
+interface Achievement {
+  id: string;
+  achievement?: { name: string; description: string };
+  name?: string;
+  description?: string;
+  unlocked_at?: string;
+  unlockedAt?: string;
+  hike_id?: string;
+}
+
+interface Favorite {
+  id: string;
+  place_id: string;
+  planned_visit_date?: string;
+  place?: { name: string };
+}
+
+interface Discovery {
+  type: string;
+  description?: string;
+  location?: { elevation?: number };
+  hike_id?: string;
+  hike_name?: string;
+  journal_entry_id?: string;
+}
+
+// Helper functions moved outside component to avoid parsing issues
+function renderTripPlanDetails(plan: JournalEntry) {
+  const metadata = plan.meta_data || {};
+  const tripPlanData = (metadata as Record<string, any>).trip_plan_data || {};
+  const planContent = tripPlanData.plan || {};
+  
+  return (
+    <div className="space-y-6">
+      {/* Overview */}
+      <div>
+        <h4 className="text-lg font-medium text-text mb-3">Overview</h4>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+          {metadata.visit_date && (
+            <div>
+              <div className="text-textSecondary mb-1">Trip duration</div>
+              <div className="font-medium text-text">3 days</div>
+            </div>
+          )}
+          <div>
+            <div className="text-textSecondary mb-1">Trail difficulty</div>
+            <div className="font-medium text-text">Mixed</div>
+          </div>
+          <div>
+            <div className="text-textSecondary mb-1">Elevation range</div>
+            <div className="font-medium text-text">4,100–5,800 ft</div>
+          </div>
+          <div>
+            <div className="text-textSecondary mb-1">Weather</div>
+            <div className="font-medium text-text">Forecast available</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Smart Checklist */}
+      {planContent.checklist && (
+        <div>
+          <h4 className="text-lg font-medium text-text mb-3">Smart Checklist</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {Object.entries(planContent.checklist).map(([category, items]: [string, any]) => (
+              <div key={category} className="p-4 rounded-xl" style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3' }}>
+                <h5 className="font-medium text-text mb-2 capitalize">{category.replace(/_/g, ' ')}</h5>
+                <ul className="space-y-2">
+                  {items.map((item: string, idx: number) => (
+                    <li key={idx} className="flex items-start gap-2 text-sm">
+                      <input type="checkbox" className="mt-1" />
+                      <span className="text-textSecondary">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Trail Plan */}
+      <div>
+        <h4 className="text-lg font-medium text-text mb-3">Trail Plan</h4>
+        <div className="space-y-3">
+          <div className="p-4 rounded-xl" style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3' }}>
+            <div className="text-sm text-textSecondary mb-1">3 planned trails</div>
+            <div className="text-sm text-text">View trails on place page</div>
+          </div>
+        </div>
+      </div>
+
+      {/* AI Trip Insights */}
+      {planContent.safety_tips && planContent.safety_tips.length > 0 && (
+        <div>
+          <h4 className="text-lg font-medium text-text mb-3">AI Trip Insights</h4>
+          <div className="p-4 rounded-xl" style={{ backgroundColor: '#FFF8F0', border: '1px solid #F4A34040' }}>
+            <ul className="space-y-2">
+              {planContent.safety_tips.slice(0, 3).map((tip: string, idx: number) => (
+                <li key={idx} className="text-sm text-text flex items-start gap-2">
+                  <span>•</span>
+                  <span>{tip}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderCompletedHikeDetails(
+  hike: Hike, 
+  hikeEntry: JournalEntry | undefined, 
+  achievements: Achievement[], 
+  uploadProgress: Record<string, number>, 
+  uploadErrors: Record<string, { message: string; retry: () => void }>, 
+  setShowReflectionModal: (show: boolean) => void,
+  setReflectionHike: (hike: Hike | null) => void,
+  setReflectionEntry: (entry: JournalEntry | null) => void,
+  handleMediaUpload: (hikeId: string, file: File, type: 'photo' | 'video' | 'audio', retryCount?: number) => Promise<void>, 
+  uploadingMedia: string | null, 
+  loadData: () => Promise<void>
+) {
+  const metadata = hikeEntry?.meta_data || {};
+  
+  return (
+    <div className="space-y-6">
+      {/* Summary with Real Data */}
+      <div className="animate-fade-up">
+        <h4 className="text-lg font-medium text-text mb-3">Summary</h4>
+        <div className="p-4 rounded-xl transition-all hover:shadow-md" style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3' }}>
+          {hike.route_points && hike.route_points.length > 0 ? (
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-textSecondary">Distance</span>
+                <span className="font-medium text-text">
+                  {hike.route_points.reduce((total: number, point: any, idx: number, arr: any[]) => {
+                    if (idx === 0) return 0;
+                    const prev = arr[idx - 1];
+                    if (prev.latitude && prev.longitude && point.latitude && point.longitude) {
+                      const R = 3959;
+                      const dLat = (point.latitude - prev.latitude) * Math.PI / 180;
+                      const dLon = (point.longitude - prev.longitude) * Math.PI / 180;
+                      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                                Math.cos(prev.latitude * Math.PI / 180) * Math.cos(point.latitude * Math.PI / 180) *
+                                Math.sin(dLon/2) * Math.sin(dLon/2);
+                      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                      return total + R * c;
+                    }
+                    return total;
+                  }, 0).toFixed(2)} miles
+                </span>
+              </div>
+              {hike.max_altitude_feet && (
+                <div className="flex justify-between">
+                  <span className="text-textSecondary">Elevation Gain</span>
+                  <span className="font-medium text-text">{hike.elevation_gain_feet || 0} ft</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-textSecondary">No route data available</p>
+          )}
+        </div>
+      </div>
+
+      {/* Media Gallery */}
+      {hike.media && hike.media.length > 0 && (
+        <div>
+          <h4 className="text-lg font-medium text-text mb-3">Media</h4>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {hike.media.map((item: Media) => (
+              <div key={item.id} className="relative aspect-square rounded-xl overflow-hidden bg-gray-100">
+                {item.type === 'photo' && item.url ? (
+                  <img src={item.url} alt="Hike photo" className="w-full h-full object-cover" />
+                ) : item.type === 'video' && item.url ? (
+                  <video src={item.url} className="w-full h-full object-cover" controls />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-textSecondary">
+                    {item.type === 'audio' ? '🎵' : '📷'}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Achievements */}
+      {achievements.filter(a => a.hike_id === hike.id).length > 0 && (
+        <div>
+          <h4 className="text-lg font-medium text-text mb-3">Achievements</h4>
+          <div className="flex flex-wrap gap-2">
+            {achievements.filter(a => a.hike_id === hike.id).map((achievement: Achievement) => (
+              <div key={achievement.id} className="px-3 py-1 rounded-full text-sm" style={{ backgroundColor: '#FFF8F0', border: '1px solid #F4A34040' }}>
+                {achievement.achievement?.name || achievement.name}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function JournalPage() {
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [completedHikes, setCompletedHikes] = useState<Hike[]>([]);
+  const [activeHikes, setActiveHikes] = useState<Hike[]>([]);
+  const [achievements, setAchievements] = useState<Achievement[]>([]);
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+  const [tripPlans, setTripPlans] = useState<JournalEntry[]>([]);
+  const [favorites, setFavorites] = useState<Favorite[]>([]);
+  const [allDiscoveries, setAllDiscoveries] = useState<Discovery[]>([]);
+  const [currentView, setCurrentView] = useState<JournalView>('timeline');
+  const [loading, setLoading] = useState(true);
+  const [celebratingHike, setCelebratingHike] = useState<Hike | null>(null);
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [expandedTripPlan, setExpandedTripPlan] = useState<string | null>(null);
+  const [expandedHike, setExpandedHike] = useState<string | null>(null);
+  const [discoveryFilter, setDiscoveryFilter] = useState<string>('all');
+  const [showReflectionModal, setShowReflectionModal] = useState(false);
+  const [reflectionHike, setReflectionHike] = useState<Hike | null>(null);
+  const [reflectionEntry, setReflectionEntry] = useState<JournalEntry | null>(null);
+  const [editingHikeName, setEditingHikeName] = useState<string | null>(null);
+  const [hikeNameEdit, setHikeNameEdit] = useState<string>('');
+  const [uploadingMedia, setUploadingMedia] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [uploadErrors, setUploadErrors] = useState<Record<string, { message: string; retry: () => void }>>({});
+  const [validationError, setValidationError] = useState<{ message: string; context: string } | null>(null);
+
+  const loadData = useCallback(async () => {
+    try {
+      setValidationError(null);
+      
+      const [completedHikesRes, activeHikesRes, achievementsRes, journalRes, favoritesRes] = await Promise.all([
+        getHikes('completed'),
+        getHikes('active'),
+        getUserAchievements(),
+        getJournalEntries(undefined, undefined, 100),
+        getFavorites(),
+      ]);
+      
+      // Validate API responses
+      const completedHikesValidation = validateResponse(
+        HikesResponseSchema,
+        completedHikesRes.data,
+        'Completed hikes response'
+      );
+      
+      const activeHikesValidation = validateResponse(
+        HikesResponseSchema,
+        activeHikesRes.data,
+        'Active hikes response'
+      );
+      
+      const journalValidation = validateResponse(
+        JournalEntriesResponseSchema,
+        journalRes.data,
+        'Journal entries response'
+      );
+      
+      // Handle validation errors
+      if (!completedHikesValidation.success) {
+        setValidationError({
+          message: completedHikesValidation.error,
+          context: 'completed hikes',
+        });
+        return;
+      }
+      
+      if (!activeHikesValidation.success) {
+        setValidationError({
+          message: activeHikesValidation.error,
+          context: 'active hikes',
+        });
+        return;
+      }
+      
+      if (!journalValidation.success) {
+        setValidationError({
+          message: journalValidation.error,
+          context: 'journal entries',
+        });
+        return;
+      }
+      
+      // Load full details for completed hikes to get media
+      const completedHikesWithDetails = await Promise.all(
+        (completedHikesValidation.data.hikes || []).map(async (hike: Hike) => {
+          try {
+            const hikeDetails = await getHike(hike.id);
+            
+            // Validate individual hike response
+            const hikeValidation = validateResponse(
+              HikeResponseSchema,
+              hikeDetails.data,
+              `Hike ${hike.id} details`
+            );
+            
+            if (!hikeValidation.success) {
+              console.error(`Validation failed for hike ${hike.id}:`, hikeValidation.error);
+              return hike; // Fallback to original hike data
+            }
+            
+            return hikeValidation.data.data || hike;
+          } catch (error) {
+            console.error(`Failed to load details for hike ${hike.id}:`, error);
+            return hike;
+          }
+        })
+      );
+      
+      setCompletedHikes(completedHikesWithDetails);
+      setActiveHikes(activeHikesValidation.data.hikes || []);
+      setAchievements(achievementsRes.data.achievements || []);
+      
+      const entries = journalValidation.data.entries || [];
+      setJournalEntries(entries);
+      
+      // Filter trip plans
+      const plans = entries.filter((e: JournalEntry) => e.entry_type === 'trip_plan');
+      setTripPlans(plans);
+      
+      // Get favorites for upcoming trips
+      setFavorites(favoritesRes.data?.favorites || []);
+      
+      // Collect all discoveries from completed hikes
+      const discoveries: Discovery[] = [];
+      completedHikesValidation.data.hikes?.forEach((hike: Hike) => {
+        if (hike.discoveries) {
+          discoveries.push(...(hike.discoveries as Discovery[]).map((d: Discovery) => ({ ...d, hike_id: hike.id, hike_name: hike.trail?.name })));
+        }
+      });
+      // Also from journal entries
+      journalValidation.data.entries.forEach((entry: JournalEntry) => {
+        if (entry.meta_data?.discoveries) {
+          discoveries.push(...(entry.meta_data.discoveries as Discovery[]).map((d: Discovery) => ({ ...d, journal_entry_id: entry.id })));
+        }
+      });
+      setAllDiscoveries(discoveries);
+      
+      // Check if we're celebrating a completed hike
+      const hikeId = searchParams.get('hike');
+      const celebrate = searchParams.get('celebrate');
+      if (hikeId && celebrate === 'true') {
+        const completedHike = completedHikesValidation.data.hikes?.find((h: Hike) => h.id === hikeId);
+        if (completedHike) {
+          const hikeEntry = journalValidation.data.entries.find((e: JournalEntry) => e.hike_id === hikeId && e.entry_type === 'hike_summary');
+          setCelebratingHike({ ...completedHike, journal_entry: hikeEntry } as any);
+          setShowCelebration(true);
+          setCurrentView('completed');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.push('/login');
+      return;
+    }
+
+    if (user) {
+      loadData();
+    }
+  }, [user, isLoading, router, loadData]);
+
+  if (isLoading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#F6F8F7' }}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4" style={{ borderColor: '#0F3D2E' }}></div>
+          <p className="text-textSecondary">Loading journal...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Calculate stats for hero summary
+  const upcomingTrips = favorites.filter((f: Favorite) => {
+    if (!f.planned_visit_date) return false;
+    const visitDate = new Date(f.planned_visit_date);
+    return visitDate >= new Date();
+  }).length;
+  
+  const totalDiscoveries = allDiscoveries.length;
+  const achievementsUnlocked = achievements.length;
+
+  // Get user photos for background
+  const userPhotos = completedHikes
+    .flatMap((hike: Hike) => hike.media || [])
+    .filter((m: Media) => m.type === 'photo' && m.url)
+    .map((m: Media) => m.url)
+    .slice(0, 8);
+
+  // Handler functions - defined before return to avoid ReferenceError
+  const handleSaveHikeName = useCallback(async (hikeId: string) => {
+    if (!hikeNameEdit.trim()) return;
+    
+    try {
+      await updateHike(hikeId, { name: hikeNameEdit.trim() });
+      setEditingHikeName(null);
+      setHikeNameEdit('');
+      loadData(); // Reload to get updated data
+    } catch (error) {
+      console.error('Failed to update hike name:', error);
+      alert('Failed to update hike name. Please try again.');
+    }
+  }, [hikeNameEdit, loadData]);
+
+  const handleMediaUpload = useCallback(async (hikeId: string, file: File, type: 'photo' | 'video' | 'audio', retryCount = 0) => {
+    const uploadKey = `${hikeId}-${file.name}-${type}`;
+    setUploadingMedia(uploadKey);
+    setUploadProgress(prev => ({ ...prev, [uploadKey]: 0 }));
+    setUploadErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors[uploadKey];
+      return newErrors;
+    });
+
+    try {
+      const response = await uploadHikeMedia(
+        hikeId, 
+        file, 
+        type,
+        (progress) => {
+          setUploadProgress(prev => ({ ...prev, [uploadKey]: progress }));
+        }
+      );
+      
+      // Validate media response
+      const mediaValidation = validateResponse(
+        MediaResponseSchema,
+        response.data,
+        `Media upload for hike ${hikeId}`
+      );
+      
+      if (!mediaValidation.success) {
+        throw new Error(mediaValidation.error);
+      }
+      
+      const newMedia = mediaValidation.data;
+      
+      // Optimistically update UI immediately
+      setCompletedHikes(prev => prev.map(hike => {
+        if (hike.id === hikeId) {
+          return {
+            ...hike,
+            media: [...(hike.media || []), newMedia]
+          };
+        }
+        return hike;
+      }));
+      
+      // Clear upload state
+      setUploadingMedia(null);
+      setUploadProgress(prev => {
+        const newProgress = { ...prev };
+        delete newProgress[uploadKey];
+        return newProgress;
+      });
+      
+      // Reload to ensure consistency
+      loadData();
+    } catch (error: unknown) {
+      console.error('Failed to upload media:', error);
+      const errorMessage = (error as any)?.response?.data?.detail || (error as any)?.message || 'Failed to upload media';
+      
+      // Store error with retry function
+      setUploadErrors(prev => ({
+        ...prev,
+        [uploadKey]: {
+          message: errorMessage,
+          retry: () => handleMediaUpload(hikeId, file, type, retryCount + 1)
+        }
+      }));
+      
+      setUploadingMedia(null);
+      setUploadProgress(prev => {
+        const newProgress = { ...prev };
+        delete newProgress[uploadKey];
+        return newProgress;
+      });
+    }
+  }, [loadData]);
+
+  return (
+    <BackgroundSystem context="journal" userPhotos={userPhotos}>
+      {/* Celebration Modal */}
+      {showCelebration && celebratingHike && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div 
+            className="bg-white rounded-3xl p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto relative"
+            style={{ border: '2px solid #F4A340' }}
+          >
+            <button
+              onClick={() => setShowCelebration(false)}
+              className="absolute top-4 right-4 text-textSecondary hover:text-text"
+            >
+              ✕
+            </button>
+            
+            <div className="text-center mb-8">
+              <div className="text-6xl mb-4">🎉</div>
+              <h2 className="text-4xl font-light mb-2 text-text">Hike Completed!</h2>
+              <p className="text-xl text-textSecondary">
+                {celebratingHike.trail?.name || (celebratingHike as any).name || 'Your Adventure'}
+              </p>
+            </div>
+            
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+              {celebratingHike.distance_miles && (
+                <div className="p-4 rounded-2xl text-center" style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3' }}>
+                  <div className="text-2xl mb-2">📏</div>
+                  <div className="text-2xl font-light text-text">{celebratingHike.distance_miles.toFixed(2)}</div>
+                  <div className="text-xs text-textSecondary">miles</div>
+                </div>
+              )}
+              {celebratingHike.duration_minutes && (
+                <div className="p-4 rounded-2xl text-center" style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3' }}>
+                  <div className="text-2xl mb-2">⏱</div>
+                  <div className="text-2xl font-light text-text">
+                    {Math.floor(celebratingHike.duration_minutes / 60)}h {celebratingHike.duration_minutes % 60}m
+                  </div>
+                  <div className="text-xs text-textSecondary">duration</div>
+                </div>
+              )}
+              {celebratingHike.elevation_gain_feet && (
+                <div className="p-4 rounded-2xl text-center" style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3' }}>
+                  <div className="text-2xl mb-2">⛰</div>
+                  <div className="text-2xl font-light text-text">{Math.round(celebratingHike.elevation_gain_feet)}</div>
+                  <div className="text-xs text-textSecondary">ft elevation</div>
+                </div>
+              )}
+              {((celebratingHike as any).journal_entry as JournalEntry)?.meta_data?.discoveries_count !== undefined && (
+                <div className="p-4 rounded-2xl text-center" style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3' }}>
+                  <div className="text-2xl mb-2">🦌</div>
+                  <div className="text-2xl font-light text-text">{((celebratingHike as any).journal_entry as JournalEntry).meta_data?.discoveries_count}</div>
+                  <div className="text-xs text-textSecondary">discoveries</div>
+                </div>
+              )}
+            </div>
+            
+            {((celebratingHike as any).journal_entry as JournalEntry)?.meta_data?.discoveries && (((celebratingHike as any).journal_entry as JournalEntry).meta_data?.discoveries as Discovery[]).length > 0 && (
+              <div className="mb-8">
+                <h3 className="text-xl font-light mb-4 text-text">Your Discoveries</h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {(((celebratingHike as any).journal_entry as JournalEntry).meta_data?.discoveries as Discovery[]).map((discovery: Discovery, idx: number) => (
+                    <div
+                      key={idx}
+                      className="p-3 rounded-xl text-center"
+                      style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3' }}
+                    >
+                      <div className="text-lg mb-1">
+                        {discovery.type === 'wildlife' ? '🦌' : 
+                         discovery.type === 'plant' ? '🌿' :
+                         discovery.type === 'geology' ? '🪨' : '🏛'}
+                      </div>
+                      <div className="text-sm text-text capitalize">{discovery.type}</div>
+                      {discovery.description && (
+                        <div className="text-xs text-textSecondary mt-1">{discovery.description}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {((celebratingHike as any).journal_entry as JournalEntry)?.meta_data?.voice_notes_count > 0 && (
+              <div className="mb-8">
+                <h3 className="text-xl font-light mb-4 text-text">Voice Notes</h3>
+                <div className="p-4 rounded-2xl text-center" style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3' }}>
+                  <div className="text-3xl mb-2">🎙</div>
+                  <div className="text-lg text-text">
+                    {((celebratingHike as any).journal_entry as JournalEntry).meta_data?.voice_notes_count} voice note{((celebratingHike as any).journal_entry as JournalEntry).meta_data?.voice_notes_count !== 1 ? 's' : ''} recorded
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            <div className="text-center p-6 rounded-2xl mb-6" style={{ backgroundColor: '#FFF8F0', border: '1px solid #F4A34040' }}>
+              <div className="text-4xl mb-2">⭐</div>
+              <div className="text-lg font-medium text-text mb-1">Trail Completed</div>
+              <div className="text-sm text-textSecondary">Your adventure has been saved to your journal</div>
+            </div>
+            
+            <button
+              onClick={() => {
+                setShowCelebration(false);
+                setCurrentView('completed');
+                setExpandedHike(celebratingHike.id);
+              }}
+              className="w-full px-6 py-3 rounded-xl font-medium text-white transition-all"
+              style={{ backgroundColor: '#4F8A6B' }}
+            >
+              View Journal Entry
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="max-w-7xl mx-auto px-6 py-12 page-enter">
+        {/* Hero Summary */}
+        <div className="mb-12">
+          <h1 className="text-5xl font-light mb-4 text-text">Your journal</h1>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="p-4 rounded-2xl text-center" style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E8E3' }}>
+              <div className="text-2xl font-light text-text mb-1">{upcomingTrips}</div>
+              <div className="text-xs text-textSecondary">upcoming trips</div>
+            </div>
+            <div className="p-4 rounded-2xl text-center" style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E8E3' }}>
+              <div className="text-2xl font-light text-text mb-1">{activeHikes.length}</div>
+              <div className="text-xs text-textSecondary">active hike{activeHikes.length !== 1 ? 's' : ''}</div>
+            </div>
+            <div className="p-4 rounded-2xl text-center" style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E8E3' }}>
+              <div className="text-2xl font-light text-text mb-1">{completedHikes.length}</div>
+              <div className="text-xs text-textSecondary">completed hikes</div>
+            </div>
+            <div className="p-4 rounded-2xl text-center" style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E8E3' }}>
+              <div className="text-2xl font-light text-text mb-1">{totalDiscoveries}</div>
+              <div className="text-xs text-textSecondary">discoveries</div>
+            </div>
+            <div className="p-4 rounded-2xl text-center" style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E8E3' }}>
+              <div className="text-2xl font-light text-text mb-1" style={{ color: '#F4A340' }}>{achievementsUnlocked}</div>
+              <div className="text-xs text-textSecondary">achievements</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Navigation */}
+        <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
+          {(['timeline', 'upcoming', 'active', 'completed', 'discoveries', 'achievements'] as JournalView[]).map((view) => (
+            <button
+              key={view}
+              onClick={() => setCurrentView(view)}
+              className="px-4 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap"
+              style={{
+                backgroundColor: currentView === view ? '#0F3D2E' : '#FAFAF8',
+                color: currentView === view ? 'white' : '#5F6F6A',
+                border: '1px solid #E8E8E3',
+              }}
+            >
+              {view.charAt(0).toUpperCase() + view.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        {validationError ? (
+          <div className="p-8 rounded-2xl text-center" style={{ backgroundColor: '#FFF8F0', border: '2px solid #F4A340' }}>
+            <div className="text-4xl mb-4">⚠️</div>
+            <h2 className="text-2xl font-medium text-text mb-2">Data Validation Error</h2>
+            <p className="text-textSecondary mb-4">
+              The server returned data in an unexpected format for <strong>{validationError.context}</strong>.
+            </p>
+            <p className="text-sm text-textSecondary mb-6 font-mono bg-gray-100 p-3 rounded break-all">
+              {validationError.message}
+            </p>
+            <button
+              onClick={() => {
+                setValidationError(null);
+                loadData();
+              }}
+              className="px-6 py-3 rounded-xl font-medium text-white transition-colors hover:opacity-90"
+              style={{ backgroundColor: '#4F8A6B' }}
+            >
+              Retry
+            </button>
+            <p className="text-xs text-textSecondary mt-4">
+              Check the browser console for detailed validation errors.
+            </p>
+          </div>
+        ) : loading ? (
+          <div className="text-center py-12 text-textSecondary">Loading...</div>
+        ) : (
+          <>
+            {/* Timeline View (Default) */}
+            {currentView === 'timeline' && (
+              <div className="space-y-8">
+                {/* Upcoming Section */}
+                {upcomingTrips > 0 && (
+                  <div>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="h-px flex-1" style={{ backgroundColor: '#E8E8E3' }}></div>
+                      <h2 className="text-xl font-light text-textSecondary">Upcoming</h2>
+                      <div className="h-px flex-1" style={{ backgroundColor: '#E8E8E3' }}></div>
+                    </div>
+                    {favorites
+                      .filter((f: Favorite) => {
+                        if (!f.planned_visit_date) return false;
+                        const visitDate = new Date(f.planned_visit_date);
+                        return visitDate >= new Date();
+                      })
+                      .slice(0, 3)
+                      .map((favorite: Favorite) => {
+                        const plan = tripPlans.find((p: JournalEntry) => (p.meta_data as Record<string, any>)?.place_id === favorite.place_id);
+                        return (
+                          <div
+                            key={favorite.id}
+                            className="p-6 rounded-2xl mb-4 cursor-pointer hover:shadow-md transition-all"
+                            style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E8E3' }}
+                            onClick={() => {
+                              if (plan) {
+                                setExpandedTripPlan(expandedTripPlan === plan.id ? null : plan.id);
+                              } else {
+                                // Show message that trip plan is being created, but don't redirect
+                                setExpandedTripPlan(null);
+                              }
+                            }}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <span className="text-lg">📅</span>
+                                  <h3 className="text-lg font-medium text-text">{favorite.place?.name || 'Planned Trip'}</h3>
+                                </div>
+                                {favorite.planned_visit_date && (
+                                  <p className="text-sm text-textSecondary mb-2">
+                                    {format(new Date(favorite.planned_visit_date), 'MMM d–d, yyyy')}
+                                  </p>
+                                )}
+                                {plan && (
+                                  <p className="text-xs text-textSecondary mb-3">
+                                    ✨ AI-Powered Trip Plan • {(plan.meta_data as Record<string, any>)?.trip_plan_data?.plan?.checklist ? 
+                                      Object.values((plan.meta_data as Record<string, any>).trip_plan_data.plan.checklist).flat().length : 0} checklist items
+                                  </p>
+                                )}
+                                {/* Action Buttons */}
+                                <div className="flex gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    onClick={async () => {
+                                      if (confirm('Cancel this trip? The plan will be saved in your journal.')) {
+                                        try {
+                                          await unfavoritePlace(favorite.place_id);
+                                          loadData();
+                                        } catch (error) {
+                                          console.error('Failed to cancel trip:', error);
+                                          alert('Failed to cancel trip. Please try again.');
+                                        }
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                                    style={{ backgroundColor: '#FFF8F0', border: '1px solid #F4A34040', color: '#F4A340' }}
+                                  >
+                                    Postpone
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      if (favorite.place_id) {
+                                        window.location.href = `/places/${favorite.place_id}`;
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                                    style={{ backgroundColor: '#4C7EF3', color: 'white' }}
+                                  >
+                                    View Details
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="flex flex-col items-end gap-2">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (plan) {
+                                      setExpandedTripPlan(expandedTripPlan === plan.id ? null : plan.id);
+                                    }
+                                  }}
+                                  className="text-2xl text-textSecondary hover:text-text transition-colors"
+                                >
+                                  {expandedTripPlan === plan?.id ? '−' : '+'}
+                                </button>
+                              </div>
+                            </div>
+                            {expandedTripPlan === plan?.id && plan && (
+                              <div className="mt-4 pt-4 border-t border-border">
+                                {renderTripPlanDetails(plan)}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+
+                {/* Active Section */}
+                {activeHikes.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="h-px flex-1" style={{ backgroundColor: '#E8E8E3' }}></div>
+                      <h2 className="text-xl font-light text-textSecondary">Active</h2>
+                      <div className="h-px flex-1" style={{ backgroundColor: '#E8E8E3' }}></div>
+                    </div>
+                    {activeHikes.map((hike: Hike) => (
+                      <div
+                        key={hike.id}
+                        className="p-6 rounded-2xl mb-4"
+                        style={{ backgroundColor: '#E8F4F8', border: '2px solid #4C7EF3' }}
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-lg">🥾</span>
+                              <h3 className="text-lg font-medium text-text">
+                                {hike.trail?.name || (hike as any).name || 'Active Hike'}
+                              </h3>
+                            </div>
+                            <p className="text-sm text-textSecondary">Hike in progress</p>
+                          </div>
+                          <Link
+                            href={`/hikes/${hike.id}`}
+                            className="px-4 py-2 rounded-xl text-sm font-medium text-white"
+                            style={{ backgroundColor: '#4C7EF3' }}
+                          >
+                            Resume hike
+                          </Link>
+                        </div>
+                        <div className="grid grid-cols-3 gap-4 text-sm">
+                          {hike.distance_miles && (
+                            <div>
+                              <div className="text-textSecondary">Distance</div>
+                              <div className="font-medium text-text">{hike.distance_miles.toFixed(2)} mi completed</div>
+                            </div>
+                          )}
+                          <div>
+                            <div className="text-textSecondary">Status</div>
+                            <div className="font-medium text-text">GPS active</div>
+                          </div>
+                          <div>
+                            <div className="text-textSecondary">Mode</div>
+                            <div className="font-medium text-text">📶 Offline mode</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Completed Section */}
+                {completedHikes.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="h-px flex-1" style={{ backgroundColor: '#E8E8E3' }}></div>
+                      <h2 className="text-xl font-light text-textSecondary">Completed</h2>
+                      <div className="h-px flex-1" style={{ backgroundColor: '#E8E8E3' }}></div>
+                    </div>
+                    {completedHikes.slice(0, 5).map((hike: Hike) => {
+                      const hikeEntry = journalEntries.find((e: JournalEntry) => e.hike_id === hike.id && e.entry_type === 'hike_summary');
+                      const isExpanded = expandedHike === hike.id;
+                      
+                      return (
+                        <div
+                          key={hike.id}
+                          className="p-6 rounded-2xl mb-4 cursor-pointer hover:shadow-md transition-all"
+                          style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E8E3' }}
+                          onClick={() => setExpandedHike(isExpanded ? null : hike.id)}
+                        >
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-lg">🏞</span>
+                                <h3 className="text-lg font-medium text-text">
+                                  {hike.trail?.name || (hike as any).name || 'Completed Hike'}
+                                </h3>
+                              </div>
+                              {hike.trail?.place?.name && (
+                                <p className="text-sm text-textSecondary mb-2">{hike.trail.place.name}</p>
+                              )}
+                              <div className="flex items-center gap-3 text-sm text-textSecondary">
+                                {hike.start_time && (
+                                  <span>{format(new Date(hike.start_time), 'MMM d, yyyy')}</span>
+                                )}
+                                {hike.distance_miles && (
+                                  <span>{hike.distance_miles.toFixed(1)} mi</span>
+                                )}
+                                {hike.elevation_gain_feet && (
+                                  <span>+{Math.round(hike.elevation_gain_feet)} ft</span>
+                                )}
+                              </div>
+                            </div>
+                            <span className="text-textSecondary">{isExpanded ? '−' : '+'}</span>
+                          </div>
+                          
+                          {isExpanded && (
+                            <div className="mt-4 pt-4 border-t border-border space-y-6">
+                              {renderCompletedHikeDetails(hike, hikeEntry, achievements, uploadProgress, uploadErrors, setShowReflectionModal, setReflectionHike, setReflectionEntry, handleMediaUpload, uploadingMedia, loadData)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Upcoming View */}
+            {currentView === 'upcoming' && (
+              <div className="space-y-4">
+                {favorites
+                  .filter((f: Favorite) => {
+                    if (!f.planned_visit_date) return false;
+                    const visitDate = new Date(f.planned_visit_date);
+                    return visitDate >= new Date();
+                  })
+                  .map((favorite: Favorite) => {
+                    const plan = tripPlans.find((p: JournalEntry) => (p.meta_data as Record<string, any>)?.place_id === favorite.place_id);
+                    const isExpanded = expandedTripPlan === plan?.id;
+                    
+                    return (
+                      <div
+                        key={favorite.id}
+                        className="p-6 rounded-2xl cursor-pointer hover:shadow-md transition-all"
+                        style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E8E3' }}
+                        onClick={() => {
+                          if (plan) {
+                            setExpandedTripPlan(isExpanded ? null : plan.id);
+                          } else {
+                            // Show message that trip plan is being created
+                            setExpandedTripPlan(null);
+                          }
+                        }}
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex-1">
+                            <h3 className="text-xl font-medium text-text mb-2">
+                              {favorite.place?.name || 'Planned Trip'}
+                            </h3>
+                            {favorite.planned_visit_date && (
+                              <p className="text-sm text-textSecondary mb-2">
+                                📅 {format(new Date(favorite.planned_visit_date), 'MMM d–d, yyyy')}
+                              </p>
+                            )}
+                            {plan && (
+                              <div className="flex items-center gap-4 text-sm text-textSecondary">
+                                <span>• 3 planned trails</span>
+                                <span>• Weather forecast available</span>
+                                <span>• {(plan.meta_data as Record<string, any>)?.trip_plan_data?.plan?.checklist ? 
+                                  Object.values((plan.meta_data as Record<string, any>).trip_plan_data.plan.checklist).flat().length : 0} checklist items</span>
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-textSecondary">{isExpanded ? '−' : '+'}</span>
+                        </div>
+                        {isExpanded && plan && (
+                          <div className="mt-4 pt-4 border-t border-border">
+                            {renderTripPlanDetails(plan)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                {upcomingTrips === 0 && (
+                  <EmptyState
+                    icon="📅"
+                    title="No upcoming trips"
+                    message="Like a park and set a visit date to create a trip plan"
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Active View */}
+            {currentView === 'active' && (
+              <div className="space-y-4">
+                {activeHikes.map((hike: Hike) => (
+                  <div
+                    key={hike.id}
+                    className="p-6 rounded-2xl"
+                    style={{ backgroundColor: '#E8F4F8', border: '2px solid #4C7EF3' }}
+                  >
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex-1">
+                        <h3 className="text-xl font-medium text-text mb-2">
+                          {hike.trail?.name || (hike as any).name || 'Active Hike'}
+                        </h3>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          {hike.duration_minutes && (
+                            <div>
+                              <div className="text-textSecondary mb-1">Time</div>
+                              <div className="font-medium text-text">
+                                {Math.floor(hike.duration_minutes / 60)}h {hike.duration_minutes % 60}m
+                              </div>
+                            </div>
+                          )}
+                          <div>
+                            <div className="text-textSecondary mb-1">Status</div>
+                            <div className="font-medium text-text">📍 GPS active</div>
+                          </div>
+                          <div>
+                            <div className="text-textSecondary mb-1">Mode</div>
+                            <div className="font-medium text-text">📶 Offline</div>
+                          </div>
+                          {hike.elevation_gain_feet && (
+                            <div>
+                              <div className="text-textSecondary mb-1">Elevation</div>
+                              <div className="font-medium text-text">+{Math.round(hike.elevation_gain_feet)} ft</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <Link
+                        href={`/hikes/${hike.id}`}
+                        className="px-6 py-3 rounded-xl font-medium text-white"
+                        style={{ backgroundColor: '#4C7EF3' }}
+                      >
+                        Resume hike
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+                {activeHikes.length === 0 && (
+                  <EmptyState
+                    icon="🥾"
+                    title="No active hikes"
+                    message="Start a hike to see it here"
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Completed View */}
+            {currentView === 'completed' && (
+              <div className="space-y-4">
+                {completedHikes.map((hike: Hike) => {
+                  const hikeEntry = journalEntries.find((e: JournalEntry) => e.hike_id === hike.id && e.entry_type === 'hike_summary');
+                  const isExpanded = expandedHike === hike.id;
+                  
+                  return (
+                    <div
+                      key={hike.id}
+                      className="p-6 rounded-2xl cursor-pointer hover:shadow-md transition-all"
+                      style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E8E3' }}
+                      onClick={() => setExpandedHike(isExpanded ? null : hike.id)}
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          {editingHikeName === hike.id ? (
+                            <div className="flex items-center gap-2 mb-2">
+                              <input
+                                type="text"
+                                value={hikeNameEdit}
+                                onChange={(e) => setHikeNameEdit(e.target.value)}
+                                className="flex-1 px-3 py-1 rounded-lg border border-E8E8E3 text-text"
+                                style={{ backgroundColor: '#FAFAF8' }}
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleSaveHikeName(hike.id);
+                                  } else if (e.key === 'Escape') {
+                                    setEditingHikeName(null);
+                                    setHikeNameEdit('');
+                                  }
+                                }}
+                              />
+                              <button
+                                onClick={() => handleSaveHikeName(hike.id)}
+                                className="px-3 py-1 rounded-lg text-sm"
+                                style={{ backgroundColor: '#4F8A6B', color: 'white' }}
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingHikeName(null);
+                                  setHikeNameEdit('');
+                                }}
+                                className="px-3 py-1 rounded-lg text-sm"
+                                style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3' }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 mb-2">
+                              <h3 className="text-xl font-medium text-text">
+                            {hike.trail?.name || (hike as any).name || 'Completed Hike'}
+                          </h3>
+                              <button
+                                onClick={() => {
+                                  setEditingHikeName(hike.id);
+                                  setHikeNameEdit(hike.trail?.name || (hike as any).name || '');
+                                }}
+                                className="p-1 rounded hover:bg-gray-100 transition-colors"
+                                title="Edit hike name"
+                              >
+                                ✏️
+                              </button>
+                            </div>
+                          )}
+                          {hike.trail?.place?.name && (
+                            <p className="text-sm text-textSecondary mb-2">{hike.trail.place.name}</p>
+                          )}
+                          <div className="flex items-center gap-4 text-sm text-textSecondary mb-2">
+                            {hike.start_time && (
+                              <span>{format(new Date(hike.start_time), 'MMM d, yyyy')}</span>
+                            )}
+                            {hike.distance_miles && (
+                              <span>{hike.distance_miles.toFixed(1)} mi</span>
+                            )}
+                            {hike.elevation_gain_feet && (
+                              <span>+{Math.round(hike.elevation_gain_feet)} ft</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-4 text-sm">
+                            {hikeEntry?.meta_data?.discoveries_count > 0 && (
+                              <span className="text-text">
+                                🦌 {hikeEntry?.meta_data?.discoveries_count} discoveries
+                              </span>
+                            )}
+                            {hike.media && hike.media.length > 0 && (
+                              <span className="text-text">📸 {hike.media.length} photos</span>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-textSecondary">{isExpanded ? '−' : '+'}</span>
+                      </div>
+                      
+                      {isExpanded && (
+                        <div className="mt-4 pt-4 border-t border-border space-y-6">
+                          {/* AI-Powered Features */}
+                          <AIFeaturesHub
+                            hikeId={hike.id}
+                            userId={user?.id}
+                            onFeatureComplete={(feature, result) => {
+                              console.log(`${feature} completed:`, result);
+                              loadData(); // Refresh data after AI operations
+                            }}
+                          />
+                          
+                          {/* Hike Details */}
+                          {renderCompletedHikeDetails(hike, hikeEntry, achievements, uploadProgress, uploadErrors, setShowReflectionModal, setReflectionHike, setReflectionEntry, handleMediaUpload, uploadingMedia, loadData)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {completedHikes.length === 0 && (
+                  <EmptyState
+                    icon="🏔️"
+                    title="No completed hikes"
+                    message="Complete a hike to see it here"
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Discoveries View */}
+            {currentView === 'discoveries' && (
+              <div>
+                <div className="flex items-center gap-2 mb-6">
+                  <div className="flex gap-2 flex-1">
+                    {['all', 'wildlife', 'plant', 'geology', 'cultural'].map((filter) => (
+                      <button
+                        key={filter}
+                        onClick={() => setDiscoveryFilter(filter)}
+                        className="px-3 py-1 rounded-lg text-sm transition-all capitalize"
+                        style={{
+                          backgroundColor: discoveryFilter === filter ? '#4F8A6B' : '#FAFAF8',
+                          color: discoveryFilter === filter ? 'white' : '#5F6F6A',
+                          border: '1px solid #E8E8E3',
+                        }}
+                      >
+                        {filter}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {allDiscoveries
+                    .filter((d: Discovery) => discoveryFilter === 'all' || d.type === discoveryFilter)
+                    .map((discovery: Discovery, idx: number) => (
+                      <div
+                        key={idx}
+                        className="p-4 rounded-2xl"
+                        style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E8E3' }}
+                      >
+                        <div className="text-3xl mb-2">
+                          {discovery.type === 'wildlife' ? '🦌' : 
+                           discovery.type === 'plant' ? '🌿' :
+                           discovery.type === 'geology' ? '🪨' : '🏛'}
+                        </div>
+                        <div className="text-sm font-medium text-text capitalize mb-1">{discovery.type}</div>
+                        {discovery.description && (
+                          <div className="text-xs text-textSecondary mb-2">{discovery.description}</div>
+                        )}
+                        {discovery.hike_name && (
+                          <div className="text-xs text-textSecondary">
+                            From: {discovery.hike_name}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                </div>
+                {allDiscoveries.length === 0 && (
+                  <EmptyState
+                    icon="🦌"
+                    title="No discoveries yet"
+                    message="Log discoveries during your hikes to see them here"
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Achievements View */}
+            {currentView === 'achievements' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {achievements.map((achievement: Achievement) => (
+                  <div
+                    key={achievement.id}
+                    className="p-6 rounded-2xl"
+                    style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E8E3' }}
+                  >
+                    <div className="text-4xl mb-3">🏆</div>
+                    <h3 className="text-xl font-medium text-text mb-2">
+                      {achievement.achievement?.name || achievement.name}
+                    </h3>
+                    <p className="text-sm text-textSecondary mb-3">
+                      {achievement.achievement?.description || achievement.description}
+                    </p>
+                    <p className="text-xs text-textSecondary">
+                      {achievement.unlocked_at && `Unlocked ${format(new Date(achievement.unlocked_at), 'MMM d, yyyy')}`}
+                      {achievement.unlockedAt && `Unlocked ${format(new Date(achievement.unlockedAt), 'MMM d, yyyy')}`}
+                    </p>
+                  </div>
+                ))}
+                {achievements.length === 0 && (
+                  <EmptyState
+                    icon="🏆"
+                    title="No achievements yet"
+                    message="Complete hikes to unlock achievements"
+                  />
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </BackgroundSystem>
+  );
+}

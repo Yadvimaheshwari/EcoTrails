@@ -1,0 +1,937 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { getPlace, createHike, getPlaceWeather, getPlaceAlerts, getPlaceTrails, favoritePlace, unfavoritePlace, checkFavorite, planTrip } from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Chip } from '@/components/ui/Chip';
+import { HikeStartSheet } from '@/components/HikeStartSheet';
+import Link from 'next/link';
+
+// Helper function to get Google Maps photo URL via backend proxy
+async function getGoogleMapsPhotoUrl(placeId: string, photoReference: string, maxWidth: number = 800): Promise<string> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/places/${placeId}/photo?photo_reference=${photoReference}&max_width=${maxWidth}`
+    );
+    if (response.ok) {
+      const data = await response.json();
+      return data.url;
+    }
+  } catch (error) {
+    console.error('Failed to get photo URL:', error);
+  }
+  return '';
+}
+
+// Helper to get terrain type and colors
+function getTerrainInfo(place: any) {
+  const name = (place.name || '').toLowerCase();
+  const description = (place.description || '').toLowerCase();
+  
+  if (name.includes('canyon') || description.includes('canyon')) {
+    return {
+      type: 'canyon',
+      gradient: 'linear-gradient(135deg, #D4A574 0%, #B8860B 100%)',
+      colors: { primary: '#D4A574', secondary: '#B8860B' }
+    };
+  }
+  if (name.includes('forest') || description.includes('forest')) {
+    return {
+      type: 'forest',
+      gradient: 'linear-gradient(135deg, #4F8A6B 0%, #0F3D2E 100%)',
+      colors: { primary: '#4F8A6B', secondary: '#0F3D2E' }
+    };
+  }
+  if (name.includes('alpine') || description.includes('alpine') || description.includes('mountain')) {
+    return {
+      type: 'alpine',
+      gradient: 'linear-gradient(135deg, #4C7EF3 0%, #2E5CC8 100%)',
+      colors: { primary: '#4C7EF3', secondary: '#2E5CC8' }
+    };
+  }
+  if (name.includes('desert') || description.includes('desert')) {
+    return {
+      type: 'desert',
+      gradient: 'linear-gradient(135deg, #F4D03F 0%, #E67E22 100%)',
+      colors: { primary: '#F4D03F', secondary: '#E67E22' }
+    };
+  }
+  
+  return {
+    type: 'default',
+    gradient: 'linear-gradient(135deg, #6B8E6B 0%, #4F8A6B 100%)',
+    colors: { primary: '#6B8E6B', secondary: '#4F8A6B' }
+  };
+}
+
+// Helper to determine trail readiness
+function getTrailReadiness(trails: any[]) {
+  const difficulties = trails.map(t => t.difficulty?.toLowerCase()).filter(Boolean);
+  const hasEasy = difficulties.includes('easy');
+  const hasModerate = difficulties.includes('moderate');
+  const hasHard = difficulties.includes('hard') || difficulties.includes('expert');
+  
+  const badges = [];
+  if (hasEasy) badges.push('Beginner friendly');
+  if (hasModerate) badges.push('Moderate terrain');
+  if (hasHard) badges.push('Expert exposure');
+  
+  return badges;
+}
+
+// Helper to get exploration insights
+function getExplorationInsights(place: any, weather: any) {
+  const insights = [];
+  const month = new Date().getMonth();
+  
+  if (month >= 3 && month <= 9) {
+    insights.push('Best season: April – October');
+  } else {
+    insights.push('Best season: May – September');
+  }
+  
+  insights.push('Sunrise hikes recommended');
+  
+  if (place.description?.toLowerCase().includes('shade')) {
+    insights.push('Limited shade');
+  } else {
+    insights.push('Moderate shade available');
+  }
+  
+  insights.push('High visitor traffic weekends');
+  insights.push('Wildlife sightings reported');
+  
+  return insights;
+}
+
+// Helper to get discovery potential
+function getDiscoveryPotential(place: any) {
+  const name = (place.name || '').toLowerCase();
+  const description = (place.description || '').toLowerCase();
+  
+  const discoveries = [];
+  
+  if (name.includes('wildlife') || description.includes('wildlife') || description.includes('animal')) {
+    discoveries.push({ icon: '🦌', label: 'Wildlife', type: 'wildlife' });
+  }
+  if (description.includes('plant') || description.includes('vegetation') || description.includes('tree')) {
+    discoveries.push({ icon: '🌿', label: 'Desert vegetation', type: 'plant' });
+  }
+  if (description.includes('rock') || description.includes('geology') || description.includes('formation')) {
+    discoveries.push({ icon: '🪨', label: 'Sedimentary rock layers', type: 'geology' });
+  }
+  if (description.includes('history') || description.includes('indigenous') || description.includes('cultural')) {
+    discoveries.push({ icon: '🏛', label: 'Indigenous history nearby', type: 'cultural' });
+  }
+  
+  // Default discoveries if none found
+  if (discoveries.length === 0) {
+    discoveries.push(
+      { icon: '🦌', label: 'Wildlife', type: 'wildlife' },
+      { icon: '🌿', label: 'Vegetation', type: 'plant' },
+      { icon: '🪨', label: 'Geology', type: 'geology' },
+      { icon: '🏛', label: 'History', type: 'cultural' }
+    );
+  }
+  
+  return discoveries;
+}
+
+export default function PlaceDetailPage() {
+  const params = useParams();
+  const router = useRouter();
+  const { user, isLoading } = useAuth();
+  const [place, setPlace] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [startingHike, setStartingHike] = useState(false);
+  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
+  const [weather, setWeather] = useState<any>(null);
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [allTrails, setAllTrails] = useState<any[]>([]);
+  const [loadingWeather, setLoadingWeather] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [showTripPlanModal, setShowTripPlanModal] = useState(false);
+  const [visitDate, setVisitDate] = useState('');
+  const [planningTrip, setPlanningTrip] = useState(false);
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
+  const [selectedPhotoFilter, setSelectedPhotoFilter] = useState<string>('all');
+  const [showStartSheet, setShowStartSheet] = useState(false);
+
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.push('/login');
+      return;
+    }
+
+    const placeId = params.id as string;
+    if (user && placeId && placeId !== 'undefined') {
+      loadPlace(placeId);
+    } else if (!placeId || placeId === 'undefined') {
+      setLoading(false);
+    }
+  }, [user, isLoading, params.id, router]);
+
+  const loadPlace = async (placeId: string) => {
+    if (!placeId || placeId === 'undefined') {
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      const response = await getPlace(placeId);
+      const placeData = response.data;
+      setPlace(placeData);
+      
+      if (placeData.photos && placeData.photos.length > 0) {
+        const urls: Record<string, string> = {};
+        for (const photo of placeData.photos) {
+          if (photo.photo_reference) {
+            try {
+              const photoUrl = await getGoogleMapsPhotoUrl(placeId, photo.photo_reference, 1600);
+              if (photoUrl) {
+                urls[photo.photo_reference] = photoUrl;
+              }
+            } catch (error) {
+              console.error('Failed to load photo URL:', error);
+            }
+          }
+        }
+        setPhotoUrls(urls);
+      }
+      
+      loadAdditionalData(placeId, placeData);
+      checkFavoriteStatus(placeId);
+    } catch (error: any) {
+      console.error('Failed to load place:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadAdditionalData = async (placeId: string, placeData: any) => {
+    if (placeData.location && placeData.location.lat && placeData.location.lng) {
+      setLoadingWeather(true);
+      try {
+        const weatherRes = await getPlaceWeather(placeId);
+        setWeather(weatherRes.data);
+      } catch (error) {
+        console.error('Failed to load weather:', error);
+      } finally {
+        setLoadingWeather(false);
+      }
+    }
+    
+    try {
+      const alertsRes = await getPlaceAlerts(placeId);
+      setAlerts(alertsRes.data?.alerts || []);
+    } catch (error) {
+      console.error('Failed to load alerts:', error);
+    }
+    
+    try {
+      const trailsRes = await getPlaceTrails(placeId);
+      const trailsData = trailsRes.data?.trails || [];
+      setAllTrails(trailsData);
+    } catch (error) {
+      console.error('Failed to load trails:', error);
+    }
+  };
+
+  const checkFavoriteStatus = async (placeId: string) => {
+    try {
+      const response = await checkFavorite(placeId);
+      setIsFavorite(response.data?.is_favorite || false);
+    } catch (error) {
+      console.error('Failed to check favorite status:', error);
+    }
+  };
+
+  const handleToggleFavorite = async () => {
+    if (!place) return;
+    
+    try {
+      if (isFavorite) {
+        await unfavoritePlace(place.id);
+        setIsFavorite(false);
+      } else {
+        setShowTripPlanModal(true);
+      }
+    } catch (error) {
+      console.error('Failed to toggle favorite:', error);
+    }
+  };
+
+  const handlePlanTrip = async () => {
+    if (!place || !visitDate) return;
+    
+    setPlanningTrip(true);
+    try {
+      await favoritePlace(place.id, visitDate);
+      setIsFavorite(true);
+      const response = await planTrip(place.id, visitDate);
+      setShowTripPlanModal(false);
+      setVisitDate('');
+      router.push(`/journal?entry=${response.data.journal_entry_id}`);
+    } catch (error: any) {
+      console.error('Failed to plan trip:', error);
+      alert(error.response?.data?.detail || 'Failed to create trip plan');
+    } finally {
+      setPlanningTrip(false);
+    }
+  };
+
+  const handleStartHikeClick = () => {
+    // Show confirmation sheet instead of directly creating hike
+    setShowStartSheet(true);
+  };
+
+  const handleStartHike = async () => {
+    if (!place || startingHike) return;
+    
+    setStartingHike(true);
+    try {
+      const response = await createHike(undefined, place.id);
+      if (response.data?.id) {
+        router.push(`/hikes/${response.data.id}`);
+      } else {
+        router.push(`/hikes/new?placeId=${place.id}`);
+      }
+    } catch (error: any) {
+      console.error('Failed to create hike:', error);
+      alert('Failed to start hike. Please try again.');
+      setStartingHike(false);
+    }
+  };
+
+  if (isLoading || !user || loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#F6F8F7' }}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4" style={{ borderColor: '#0F3D2E' }}></div>
+          <p className="text-textSecondary">Loading place details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!place) {
+    return (
+      <div className="max-w-7xl mx-auto px-6 py-12" style={{ backgroundColor: '#F6F8F7' }}>
+        <EmptyState
+          icon="🏞️"
+          title="Place not found"
+          message="The place you're looking for doesn't exist"
+        />
+      </div>
+    );
+  }
+
+  const trails = (place.trails && place.trails.length > 0) ? place.trails : allTrails;
+  const metadata = place.metadata || {};
+  const photos = metadata.photos || place.photos || [];
+  const rating = metadata.rating || place.rating;
+  const userRatingsTotal = metadata.user_ratings_total || place.user_ratings_total;
+  const location = place.location || {};
+  const lat = typeof location === 'object' ? location.lat : null;
+  const lng = typeof location === 'object' ? location.lng : null;
+  
+  let state = 'USA';
+  if (metadata.address_components) {
+    const stateComponent = metadata.address_components.find((comp: any) => 
+      comp.types?.includes('administrative_area_level_1')
+    );
+    if (stateComponent) {
+      state = stateComponent.short_name || stateComponent.long_name;
+    }
+  }
+  
+  const terrainInfo = getTerrainInfo(place);
+  const readinessBadges = getTrailReadiness(trails);
+  const insights = getExplorationInsights(place, weather);
+  const discoveryPotential = getDiscoveryPotential(place);
+  
+  // Calculate trail summary stats
+  const difficultyCounts = trails.reduce((acc: any, trail: any) => {
+    const diff = trail.difficulty?.toLowerCase() || 'unknown';
+    acc[diff] = (acc[diff] || 0) + 1;
+    return acc;
+  }, {});
+  
+  const elevations = trails
+    .map((t: any) => t.elevation_gain_feet)
+    .filter(Boolean)
+    .sort((a: any, b: any) => a - b);
+  const minElevation = elevations[0] || 0;
+  const maxElevation = elevations[elevations.length - 1] || 0;
+  
+  const durations = trails
+    .map((t: any) => t.estimated_duration_minutes)
+    .filter(Boolean)
+    .sort((a: any, b: any) => a - b);
+  const minDuration = durations[0] || 0;
+  const maxDuration = durations[durations.length - 1] || 0;
+
+  // Filter photos by category
+  const filteredPhotos = selectedPhotoFilter === 'all' 
+    ? photos 
+    : photos.filter((photo: any) => {
+        // Simple filtering logic - can be enhanced
+        return true;
+      });
+
+  return (
+    <div className="min-h-screen" style={{ backgroundColor: '#F6F8F7' }}>
+      {/* SECTION 1: Immersive Hero Header */}
+      <div 
+        className="relative h-[500px] w-full overflow-hidden"
+        style={{
+          background: terrainInfo.gradient,
+        }}
+      >
+        {/* Topo texture overlay */}
+        <div 
+          className="absolute inset-0 opacity-[0.03]"
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23000000' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+          }}
+        />
+        
+        {/* Gradient overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#F6F8F7] via-[#F6F8F7]/80 to-transparent" />
+        
+        {/* Hero content */}
+        <div className="relative z-10 h-full flex flex-col justify-end pb-12 px-6">
+          <div className="max-w-7xl mx-auto w-full">
+            <button
+              onClick={() => router.back()}
+              className="absolute top-6 left-6 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-lg text-text hover:bg-white transition-colors"
+            >
+              ← Back
+            </button>
+            
+            <div className="mt-16">
+              <h1 className="text-5xl md:text-6xl font-light mb-3 text-white drop-shadow-lg">
+                {place.name}
+              </h1>
+              
+              <div className="flex items-center gap-3 mb-4 text-white/90">
+                <span>📍</span>
+                <span>{state}, USA</span>
+                {rating && (
+                  <>
+                    <span>·</span>
+                    <span>⭐ {rating.toFixed(1)}</span>
+                    {userRatingsTotal && (
+                      <span>· {userRatingsTotal.toLocaleString()} hikers</span>
+                    )}
+                  </>
+                )}
+              </div>
+              
+              {/* Terrain tags */}
+              <div className="flex flex-wrap gap-2 mb-6">
+                {place.place_type && (
+                  <span className="px-3 py-1 rounded-full text-sm bg-white/20 backdrop-blur-sm text-white">
+                    {place.place_type}
+                  </span>
+                )}
+                {place.description && (
+                  <>
+                    {place.description.toLowerCase().includes('desert') && (
+                      <span className="px-3 py-1 rounded-full text-sm bg-white/20 backdrop-blur-sm text-white">
+                        High desert
+                      </span>
+                    )}
+                    {place.description.toLowerCase().includes('canyon') && (
+                      <span className="px-3 py-1 rounded-full text-sm bg-white/20 backdrop-blur-sm text-white">
+                        Canyon terrain
+                      </span>
+                    )}
+                    {place.description.toLowerCase().includes('exposed') && (
+                      <span className="px-3 py-1 rounded-full text-sm bg-white/20 backdrop-blur-sm text-white">
+                        Exposed sun
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+              
+              {/* Trail readiness badges */}
+              {readinessBadges.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-6">
+                  {readinessBadges.map((badge, idx) => (
+                    <span
+                      key={idx}
+                      className="px-4 py-2 rounded-lg text-sm font-medium bg-white/90 text-text"
+                    >
+                      {badge}
+                    </span>
+                  ))}
+                </div>
+              )}
+              
+              {/* Hero actions */}
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={handleToggleFavorite}
+                  className="px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2"
+                  style={{
+                    backgroundColor: isFavorite ? '#F4A340' : 'rgba(255, 255, 255, 0.9)',
+                    color: isFavorite ? 'white' : '#1B1F1E',
+                  }}
+                >
+                  <span>{isFavorite ? '⭐' : '☆'}</span>
+                  <span>Save place</span>
+                </button>
+                
+                <button
+                  onClick={handleStartHikeClick}
+                  disabled={startingHike}
+                  className="px-6 py-3 rounded-xl font-medium text-white transition-all disabled:opacity-50 flex items-center gap-2 hover:shadow-lg hover:scale-[1.02]"
+                  style={{
+                    backgroundColor: '#4C7EF3',
+                    backgroundImage: 'linear-gradient(to bottom, #4C7EF3, #3B6ED8)',
+                  }}
+                >
+                  {startingHike ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      Starting...
+                    </>
+                  ) : (
+                    <>
+                      <span>🧭</span>
+                      <span>Start hike</span>
+                    </>
+                  )}
+                </button>
+                
+                {lat && lng && (
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2 bg-white/90 text-text hover:bg-white"
+                  >
+                    <span>🧭</span>
+                    <span>Directions</span>
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        {/* SECTION 2: Trail Summary Strip */}
+        {trails.length > 0 && (
+          <div className="mb-8 p-6 rounded-2xl" style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E8E3' }}>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <div className="text-sm text-textSecondary mb-2">Trails available</div>
+                <div className="text-2xl font-light text-text">{trails.length}</div>
+                <div className="flex gap-4 mt-2 text-sm text-textSecondary">
+                  {['easy', 'moderate', 'hard', 'expert'].map(diff => (
+                    <span key={diff}>
+                      {diff.charAt(0).toUpperCase() + diff.slice(1)} {difficultyCounts[diff] || 0}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              
+              {minElevation > 0 && (
+                <div>
+                  <div className="text-sm text-textSecondary mb-2">Elevation range</div>
+                  <div className="text-2xl font-light text-text">
+                    {Math.round(minElevation).toLocaleString()} ft – {Math.round(maxElevation).toLocaleString()} ft
+                  </div>
+                </div>
+              )}
+              
+              {minDuration > 0 && (
+                <div>
+                  <div className="text-sm text-textSecondary mb-2">Typical hike time</div>
+                  <div className="text-2xl font-light text-text">
+                    {Math.round(minDuration / 60)} min – {Math.round(maxDuration / 60)} hrs
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* SECTION 3: Trail Cards (Primary Focus) - Decision Cards */}
+        {trails.length > 0 && (
+          <div className="mb-12">
+            <h2 className="text-3xl font-light mb-6 text-text">Trails</h2>
+            
+            {/* Best for today recommendation */}
+            {trails.length > 0 && weather && weather.success && (() => {
+              // Find best trail based on weather, daylight, and difficulty
+              const hour = new Date().getHours();
+              const isDaylight = hour >= 6 && hour <= 18;
+              const isCold = weather.temperature < 50;
+              const isSnowing = weather.description?.toLowerCase().includes('snow');
+              
+              // Recommend easy/moderate trails in good conditions, or shorter trails in bad conditions
+              const recommendedTrail = trails.find((t: any) => {
+                if (isCold || isSnowing) {
+                  return t.difficulty?.toLowerCase() === 'easy' && t.distance_miles && t.distance_miles < 3;
+                }
+                return t.difficulty?.toLowerCase() === 'easy' || t.difficulty?.toLowerCase() === 'moderate';
+              }) || trails[0];
+              
+              return recommendedTrail ? (
+                <div className="mb-6 p-4 rounded-2xl" style={{ backgroundColor: '#FFF8F0', border: '2px solid #F4A340' }}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-lg">⭐</span>
+                    <span className="text-sm font-medium" style={{ color: '#F4A340' }}>Recommended today</span>
+                  </div>
+                  <Link
+                    href={`/hikes/new?trailId=${recommendedTrail.id}&placeId=${place.id}`}
+                    className="block"
+                  >
+                    <div className="text-lg font-medium text-text">{recommendedTrail.name}</div>
+                    <div className="text-sm text-textSecondary mt-1">
+                      {recommendedTrail.distance_miles} mi · {recommendedTrail.difficulty || 'Easy'} · {recommendedTrail.elevation_gain_feet ? `+${Math.round(recommendedTrail.elevation_gain_feet)} ft` : ''}
+                    </div>
+                  </Link>
+                </div>
+              ) : null;
+            })()}
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {trails.map((trail: any) => {
+                const difficultyColors: Record<string, string> = {
+                  easy: '#4F8A6B',
+                  moderate: '#4A9B9B',
+                  hard: '#4C7EF3',
+                  expert: '#F4A340'
+                };
+                const difficultyColor = difficultyColors[trail.difficulty?.toLowerCase() || 'easy'] || '#6B8E6B';
+                
+                // Determine crowd level (mock logic - can be enhanced)
+                const crowdLevel = trail.description?.toLowerCase().includes('crowded') ? 'High' :
+                                  trail.description?.toLowerCase().includes('quiet') ? 'Low' : 'Moderate';
+                
+                return (
+                  <Link
+                    key={trail.id}
+                    href={`/hikes/new?trailId=${trail.id}&placeId=${place.id}`}
+                    className="block p-6 rounded-2xl hover:shadow-md transition-all"
+                    style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E8E3' }}
+                  >
+                    <div className="flex items-start justify-between mb-4">
+                      <h3 className="text-xl font-medium text-text flex-1">{trail.name}</h3>
+                      <span
+                        className="px-3 py-1 rounded-lg text-xs font-medium capitalize ml-2"
+                        style={{
+                          backgroundColor: `${difficultyColor}20`,
+                          color: difficultyColor,
+                        }}
+                      >
+                        {trail.difficulty || 'Easy'}
+                      </span>
+                    </div>
+                    
+                    {/* Decision card metrics - no paragraphs */}
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <div className="text-textSecondary mb-1">Distance</div>
+                        <div className="font-medium text-text">{trail.distance_miles || 'N/A'} mi</div>
+                      </div>
+                      <div>
+                        <div className="text-textSecondary mb-1">Elevation</div>
+                        <div className="font-medium text-text">{trail.elevation_gain_feet ? `+${Math.round(trail.elevation_gain_feet)} ft` : 'N/A'}</div>
+                      </div>
+                      <div>
+                        <div className="text-textSecondary mb-1">Time</div>
+                        <div className="font-medium text-text">
+                          {trail.estimated_duration_minutes 
+                            ? `${Math.round(trail.estimated_duration_minutes / 60)}h ${trail.estimated_duration_minutes % 60}m`
+                            : 'N/A'}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-textSecondary mb-1">Crowd level</div>
+                        <div className="font-medium text-text">{crowdLevel}</div>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* SECTION 4: Live Conditions */}
+        {weather && weather.success && (
+          <div className="mb-12">
+            <h2 className="text-3xl font-light mb-6 text-text">Current conditions</h2>
+            <div className="p-6 rounded-2xl" style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E8E3' }}>
+              <div className="flex items-center gap-4 mb-4">
+                {weather.icon && (
+                  <img
+                    src={`https://openweathermap.org/img/wn/${weather.icon}@2x.png`}
+                    alt={weather.description}
+                    className="w-16 h-16"
+                  />
+                )}
+                <div>
+                  <div className="text-4xl font-light text-text">
+                    {Math.round(weather.temperature)}°F
+                  </div>
+                  <div className="text-lg text-textSecondary capitalize">
+                    {weather.description}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="space-y-2 text-sm text-textSecondary mb-4">
+                <div>Feels like {Math.round(weather.feels_like)}°F</div>
+                <div>Wind {Math.round(weather.wind_speed)} mph</div>
+                <div>Visibility {weather.visibility ? (weather.visibility / 1609.34).toFixed(1) : 'N/A'} mi</div>
+              </div>
+              
+              {/* Actionable warnings */}
+              {weather.temperature < 32 && (
+                <div className="mt-4 p-3 rounded-lg" style={{ backgroundColor: '#FFF8F0', border: '1px solid #F4A34040' }}>
+                  <div className="text-sm font-medium text-text">⚠ Cold exposure risk</div>
+                  <div className="text-xs text-textSecondary mt-1">Traction recommended</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* SECTION 5: Exploration Insights */}
+        {insights.length > 0 && (
+          <div className="mb-12">
+            <h2 className="text-3xl font-light mb-6 text-text">Exploration insights</h2>
+            <div className="p-6 rounded-2xl" style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3' }}>
+              <ul className="space-y-2">
+                {insights.map((insight, idx) => (
+                  <li key={idx} className="flex items-start gap-3 text-text">
+                    <span className="text-mossGreen mt-1">•</span>
+                    <span>{insight}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* SECTION 6: Discoveries Potential */}
+        {discoveryPotential.length > 0 && (
+          <div className="mb-12">
+            <h2 className="text-3xl font-light mb-6 text-text">Possible discoveries</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {discoveryPotential.map((discovery, idx) => (
+                <div
+                  key={idx}
+                  className="p-4 rounded-2xl text-center"
+                  style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E8E3' }}
+                >
+                  <div className="text-3xl mb-2">{discovery.icon}</div>
+                  <div className="text-sm text-text">{discovery.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* SECTION 7: Photos (Refined) - Moved after trails */}
+        {photos.length > 0 && (
+          <div className="mb-12">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-3xl font-light text-text">Photos</h2>
+              <div className="flex gap-2">
+                {['all', 'trail', 'view', 'wildlife', 'map'].map(filter => (
+                  <button
+                    key={filter}
+                    onClick={() => setSelectedPhotoFilter(filter)}
+                    className="px-3 py-1 rounded-lg text-sm transition-all capitalize"
+                    style={{
+                      backgroundColor: selectedPhotoFilter === filter ? '#4F8A6B' : '#FAFAF8',
+                      color: selectedPhotoFilter === filter ? 'white' : '#5F6F6A',
+                      border: '1px solid #E8E8E3',
+                    }}
+                  >
+                    {filter}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {filteredPhotos.slice(0, 8).map((photo: any, idx: number) => {
+                const photoUrl = photo.photo_reference && photoUrls[photo.photo_reference];
+                if (!photoUrl) return null;
+                
+                return (
+                  <div
+                    key={idx}
+                    className="relative aspect-square rounded-2xl overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
+                    onClick={() => window.open(photoUrl, '_blank')}
+                  >
+                    <img
+                      src={photoUrl}
+                      alt={`${place.name} - Photo ${idx + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* SECTION 8: Reviews (Reframed as Hiker Notes) */}
+        {metadata.reviews && metadata.reviews.length > 0 && (
+          <div className="mb-12">
+            <h2 className="text-3xl font-light mb-6 text-text">Hiker notes</h2>
+            <div className="space-y-4">
+              {metadata.reviews
+                .filter((review: any) => {
+                  // Prioritize hiking-relevant comments
+                  const text = (review.text || '').toLowerCase();
+                  return text.includes('trail') || text.includes('hike') || text.includes('path') || 
+                         text.includes('condition') || text.includes('shade') || text.includes('safety');
+                })
+                .slice(0, 5)
+                .map((review: any, idx: number) => (
+                  <div key={idx} className="p-4 rounded-2xl" style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E8E3' }}>
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        {review.profile_photo_url && (
+                          <img
+                            src={review.profile_photo_url}
+                            alt={review.author_name}
+                            className="w-10 h-10 rounded-full"
+                          />
+                        )}
+                        <div>
+                          <div className="font-medium text-text">{review.author_name}</div>
+                          {review.rating && (
+                            <div className="flex items-center gap-1 text-sm text-textSecondary">
+                              <span>⭐</span>
+                              <span>{review.rating}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {review.relative_time_description && (
+                        <span className="text-sm text-textSecondary">
+                          {review.relative_time_description}
+                        </span>
+                      )}
+                    </div>
+                    {review.text && (
+                      <p className="text-sm text-textSecondary mt-2">{review.text}</p>
+                    )}
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* SECTION 9: Technical Details (Collapsed) */}
+        <div className="mb-12">
+          <button
+            onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
+            className="w-full p-4 rounded-2xl text-left flex items-center justify-between"
+            style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3' }}
+          >
+            <span className="text-sm font-medium text-text">Technical details</span>
+            <span className="text-textSecondary">{showTechnicalDetails ? '−' : '+'}</span>
+          </button>
+          
+          {showTechnicalDetails && (
+            <div className="mt-4 p-6 rounded-2xl space-y-3 text-sm" style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3' }}>
+              {lat && lng && (
+                <div className="text-textSecondary">
+                  <strong>Coordinates:</strong> {lat.toFixed(6)}, {lng.toFixed(6)}
+                </div>
+              )}
+              {place.id && (
+                <div className="text-textSecondary">
+                  <strong>Place ID:</strong> {place.id}
+                </div>
+              )}
+              {metadata.website && (
+                <div className="text-textSecondary">
+                  <strong>Website:</strong>{' '}
+                  <a href={metadata.website} target="_blank" rel="noopener noreferrer" className="text-alpineBlue hover:underline">
+                    {metadata.website}
+                  </a>
+                </div>
+              )}
+              {metadata.phone_number && (
+                <div className="text-textSecondary">
+                  <strong>Phone:</strong> {metadata.phone_number}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Hike Start Confirmation Sheet */}
+      <HikeStartSheet
+        isOpen={showStartSheet}
+        onClose={() => setShowStartSheet(false)}
+        onStartHike={handleStartHike}
+        placeName={place.name}
+        weather={weather}
+        loading={startingHike}
+      />
+
+      {/* Trip Planning Modal */}
+      {showTripPlanModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <h2 className="text-2xl font-light mb-4 text-text">Plan Your Trip</h2>
+            <div className="mb-4 p-3 rounded-lg" style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3' }}>
+              <p className="text-sm text-textSecondary">
+                When you set a visit date, EcoTrails uses AI to generate a personalized trip plan with checklists, packing lists, timelines, safety tips, and recommended activities. The plan is saved to your Journal.
+              </p>
+            </div>
+            <p className="text-textSecondary mb-4">
+              When are you planning to visit {place.name}?
+            </p>
+            <input
+              type="date"
+              value={visitDate}
+              onChange={(e) => setVisitDate(e.target.value)}
+              min={new Date().toISOString().split('T')[0]}
+              className="w-full px-4 py-3 border rounded-xl mb-4"
+              style={{ borderColor: '#E8E8E3' }}
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowTripPlanModal(false);
+                  setVisitDate('');
+                }}
+                className="flex-1 px-4 py-3 rounded-xl transition-colors"
+                style={{ border: '1px solid #E8E8E3', color: '#5F6F6A' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePlanTrip}
+                disabled={!visitDate || planningTrip}
+                className="flex-1 px-4 py-3 rounded-xl text-white transition-all disabled:opacity-50"
+                style={{ backgroundColor: '#4C7EF3' }}
+              >
+                {planningTrip ? 'Planning...' : 'Create Plan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

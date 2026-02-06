@@ -56,7 +56,7 @@ class Agent:
         try:
             if not self.api_key:
                 raise ValueError("API_KEY not set for Gemini client.")
-            api_client = genai.Client(api_key=self.api_key, http_options={'api_version': 'v1alpha'})
+            api_client = genai.Client(api_key=self.api_key)
             response = await asyncio.to_thread(
                 api_client.models.generate_content,
                 model=self.model_name,

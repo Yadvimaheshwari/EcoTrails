@@ -1,9 +1,0 @@
-{
-  "name": "EcoAtlas AI",
-  "description": "An autonomous multimodal intelligence system for understanding outdoor environments. Observe hiking sessions, detect environmental changes, and build long-term memory of the natural world.",
-  "requestFramePermissions": [
-    "camera",
-    "microphone",
-    "geolocation"
-  ]
-}

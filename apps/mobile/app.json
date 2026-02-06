@@ -1,0 +1,82 @@
+{
+  "expo": {
+    "name": "EcoTrails",
+    "slug": "ecotrails",
+    "scheme": "ecotrails",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F5F5F0"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ecotrails.app",
+      "buildNumber": "1.0.0",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "EcoTrails needs your location to track your hikes.",
+        "NSLocationAlwaysUsageDescription": "EcoTrails needs your location to track hikes in the background.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "EcoTrails needs your location to track hikes in the background.",
+        "NSCameraUsageDescription": "EcoTrails needs camera access to capture moments during your hikes.",
+        "NSPhotoLibraryUsageDescription": "EcoTrails needs photo library access to save and organize your hike photos.",
+        "LSApplicationQueriesSchemes": ["comgooglemaps"]
+      },
+      "backgroundModes": [
+        "location",
+        "fetch"
+      ]
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#F5F5F0"
+      },
+      "package": "com.ecotrails.app",
+      "versionCode": 1,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "ecotrails"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow EcoTrails to use your location to track hikes."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow EcoTrails to access your camera to capture moments during hikes."
+        }
+      ],
+      "expo-router",
+      "expo-sqlite"
+    ]
+  }
+}
