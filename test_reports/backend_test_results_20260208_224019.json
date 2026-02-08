@@ -1,0 +1,135 @@
+{
+  "summary": {
+    "total_tests": 9,
+    "passed_tests": 9,
+    "success_rate": 1.0,
+    "backend_url": "https://ec0aa055-ea47-470e-bc88-1706654d1a17.preview.emergentagent.com",
+    "timestamp": "2026-02-08T22:40:19.211980"
+  },
+  "detailed_results": [
+    {
+      "test_name": "API Connectivity",
+      "success": true,
+      "details": "API is accessible and responding",
+      "timestamp": "2026-02-08T22:39:56.739999",
+      "response_data": null
+    },
+    {
+      "test_name": "Places Search - Yellowstone",
+      "success": true,
+      "details": "Found 1 places, Yellowstone included",
+      "timestamp": "2026-02-08T22:39:56.756481",
+      "response_data": {
+        "id": "ChIJVVVVVVXlUVMRu-GPNDD5qKw",
+        "name": "Yellowstone National Park",
+        "place_type": "tourist_attraction",
+        "location": {
+          "lat": 44.5979182,
+          "lng": -110.561249
+        },
+        "description": "United States",
+        "metadata": {
+          "rating": 4.8,
+          "user_ratings_total": 44649,
+          "google_place_id": "ChIJVVVVVVXlUVMRu-GPNDD5qKw",
+          "source": "google_maps_search",
+          "photos": [
+            {
+              "height": 4000,
+              "html_attributions": [
+                "<a href=\"https://maps.google.com/maps/contrib/109905818381913463426\">Peggy Austin</a>"
+              ],
+              "photo_reference": "AcnlKN2NUtsTu-Gl69Q7tc2gHl5Zirhr0BhkRHEUvHBcH6RzzrJiz8y7hkhaYoGvmMmDNb2Wc_HFQRDeT6mAWjsTqXfuYJH52H5_2cVCVODZIg2L5H9hfI6EVyyJmumw4vaQf3vkLPkaMgdWayhxYTCG2cXAbFn4gnr_6TYLuBCew93owbYps6_JuEAPPha5oFXa8RovrytG9N2a6AqdcZXf_hAlQPKf2nIjRfJEKFzZ7iOsPGXhhX4-NUXAhC1lzB-wA882Xkb8jKIylG9xIRIYFaJWHSo3BkYyOSqXgRn8C6Wg7Z4pj8fEhPJ7mo_onysWTV5oH6jg8kKP8gYu7X8OBYTxu80tm72A6gAM6R0bVkjmNsMeETIPxut1mdf7uePZy3_7F8-FGmm136XQOwWQbuFdhl7LyJwIZDrowjDiAS5wF6BhMeBsu97PC4m9HevPph4dfYjdpez81iTtf9wH9t6Cw9OHkzA6bnYahN6BEOXxjprCwymmBXPfD71Zq6LoReR_XaC0Qql6WeRXIfDHUZ4jGZCB3Tp5ljdSYotDVBcDg89GJaI--OkdcTpEwvdx11IQekLZ",
+              "width": 3000
+            }
+          ],
+          "types": [
+            "tourist_attraction",
+            "park",
+            "point_of_interest",
+            "establishment"
+          ]
+        }
+      }
+    },
+    {
+      "test_name": "Place Details",
+      "success": true,
+      "details": "Retrieved details for Yellowstone National Park",
+      "timestamp": "2026-02-08T22:39:56.771556",
+      "response_data": {
+        "id": "ChIJVVVVVVXlUVMRu-GPNDD5qKw",
+        "name": "Yellowstone National Park",
+        "trails_count": 8
+      }
+    },
+    {
+      "test_name": "Place Trails",
+      "success": true,
+      "details": "Found 8 trails",
+      "timestamp": "2026-02-08T22:39:56.781586",
+      "response_data": {
+        "trails_count": 8,
+        "first_trail": {
+          "id": "ChIJVVVVVVXlUVMRu-GPNDD5qKw_trail_3a0f57f9",
+          "name": "Grand Prismatic Spring Overlook Trail",
+          "difficulty": "easy",
+          "distance_miles": 1.2,
+          "elevation_gain_feet": 200.0,
+          "estimated_duration_minutes": 45,
+          "description": "A short, paved trail leading to an overlook with stunning panoramic views of the Grand Prismatic Spring, Yellowstone's largest and most colorful hot spring. The vibrant colors and immense scale make this a must-see for any visitor.",
+          "meta_data": {
+            "source": "gemini_generated",
+            "generated_at": "2026-02-08T20:57:45.536770"
+          },
+          "lat": 44.5979182,
+          "lng": -110.561249,
+          "bounding_box": null
+        }
+      }
+    },
+    {
+      "test_name": "Place Weather",
+      "success": true,
+      "details": "Weather data retrieved",
+      "timestamp": "2026-02-08T22:39:56.984506",
+      "response_data": {
+        "temperature": 38.32,
+        "conditions": null
+      }
+    },
+    {
+      "test_name": "AI Companion Insight",
+      "success": true,
+      "details": "Generated insight: That unmistakable white hood identifies a mature Bald Eagle, a bird that has survived at least five ...",
+      "timestamp": "2026-02-08T22:40:05.424234",
+      "response_data": {
+        "insight_length": 428,
+        "priority": "medium"
+      }
+    },
+    {
+      "test_name": "Magic Link Auth",
+      "success": true,
+      "details": "Magic link request successful: Magic link sent (check logs for dev mode)",
+      "timestamp": "2026-02-08T22:40:06.049589",
+      "response_data": {
+        "message": "Magic link sent (check logs for dev mode)"
+      }
+    },
+    {
+      "test_name": "Nearby Places",
+      "success": true,
+      "details": "Found 44 nearby places",
+      "timestamp": "2026-02-08T22:40:07.570843",
+      "response_data": null
+    },
+    {
+      "test_name": "Companion Ask",
+      "success": true,
+      "details": "Generated answer: The landscape here is dense with life, though much of it relies on the quiet of the morning or the c...",
+      "timestamp": "2026-02-08T22:40:19.210156",
+      "response_data": null
+    }
+  ]
+}
