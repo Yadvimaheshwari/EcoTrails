@@ -1,0 +1,124 @@
+{
+  "summary": {
+    "total_tests": 16,
+    "passed_tests": 14,
+    "success_rate": 0.875,
+    "backend_url": "https://ec0aa055-ea47-470e-bc88-1706654d1a17.preview.emergentagent.com",
+    "test_type": "mobile_backend",
+    "timestamp": "2026-02-08T22:41:13.829386"
+  },
+  "detailed_results": [
+    {
+      "test_name": "Mobile API Configuration",
+      "success": true,
+      "details": "Mobile API base URL is accessible: https://ec0aa055-ea47-470e-bc88-1706654d1a17.preview.emergentagent.com",
+      "timestamp": "2026-02-08T22:41:10.171564",
+      "response_data": null
+    },
+    {
+      "test_name": "ExploreScreen - Places Search",
+      "success": true,
+      "details": "Search returned 1 places",
+      "timestamp": "2026-02-08T22:41:10.466156",
+      "response_data": null
+    },
+    {
+      "test_name": "ExploreScreen - Nearby Places",
+      "success": true,
+      "details": "Nearby search returned 53 places",
+      "timestamp": "2026-02-08T22:41:12.029531",
+      "response_data": null
+    },
+    {
+      "test_name": "ExploreScreen - NPS State Parks",
+      "success": true,
+      "details": "CA state parks returned 1 parks",
+      "timestamp": "2026-02-08T22:41:12.242241",
+      "response_data": null
+    },
+    {
+      "test_name": "PlaceDetailScreen - Place Details",
+      "success": true,
+      "details": "Retrieved place: Yellowstone National Park",
+      "timestamp": "2026-02-08T22:41:12.254698",
+      "response_data": null
+    },
+    {
+      "test_name": "PlaceDetailScreen - Place Trails",
+      "success": true,
+      "details": "Retrieved 8 trails",
+      "timestamp": "2026-02-08T22:41:12.267215",
+      "response_data": null
+    },
+    {
+      "test_name": "PlaceDetailScreen - Place Details",
+      "success": true,
+      "details": "Retrieved place: Yellowstone National Park",
+      "timestamp": "2026-02-08T22:41:12.275773",
+      "response_data": null
+    },
+    {
+      "test_name": "PlaceDetailScreen - Place Trails",
+      "success": true,
+      "details": "Retrieved 8 trails",
+      "timestamp": "2026-02-08T22:41:12.283455",
+      "response_data": null
+    },
+    {
+      "test_name": "PlaceDetailScreen - Offline PDF Map",
+      "success": true,
+      "details": "PDF map available, size: 8587876 bytes",
+      "timestamp": "2026-02-08T22:41:13.120557",
+      "response_data": null
+    },
+    {
+      "test_name": "PlaceDetailScreen - NPS Map Assets",
+      "success": true,
+      "details": "Retrieved 0 map assets for {'id': 'ChIJVVVVVVXlUVMRu-GPNDD5qKw_trail_3a0f57f9', 'name': 'Grand Prismatic Spring Overlook Trail', 'difficulty': 'easy', 'distance_miles': 1.2, 'elevation_gain_feet': 200.0, 'estimated_duration_minutes': 45, 'description': \"A short, paved trail leading to an overlook with stunning panoramic views of the Grand Prismatic Spring, Yellowstone's largest and most colorful hot spring. The vibrant colors and immense scale make this a must-see for any visitor.\", 'meta_data': {'source': 'gemini_generated', 'generated_at': '2026-02-08T20:57:45.536770'}, 'lat': 44.5979182, 'lng': -110.561249, 'bounding_box': None}",
+      "timestamp": "2026-02-08T22:41:13.517297",
+      "response_data": null
+    },
+    {
+      "test_name": "DuringHikeScreen - Trail Route",
+      "success": true,
+      "details": "Route has 24 coordinate points",
+      "timestamp": "2026-02-08T22:41:13.526545",
+      "response_data": null
+    },
+    {
+      "test_name": "DuringHikeScreen - Trail Navigation",
+      "success": true,
+      "details": "Navigation data available, trailhead: {'lat': 44.5979182, 'lng': -110.561249}",
+      "timestamp": "2026-02-08T22:41:13.539093",
+      "response_data": null
+    },
+    {
+      "test_name": "JournalScreen - Journal Entries",
+      "success": false,
+      "details": "Status 401",
+      "timestamp": "2026-02-08T22:41:13.549446",
+      "response_data": null
+    },
+    {
+      "test_name": "JournalScreen - Completed Hikes",
+      "success": false,
+      "details": "Status 401",
+      "timestamp": "2026-02-08T22:41:13.556795",
+      "response_data": null
+    },
+    {
+      "test_name": "Mobile Headers Support",
+      "success": true,
+      "details": "API accepts mobile-specific headers",
+      "timestamp": "2026-02-08T22:41:13.820690",
+      "response_data": null
+    },
+    {
+      "test_name": "CORS Support",
+      "success": true,
+      "details": "No CORS headers (may not be needed for mobile)",
+      "timestamp": "2026-02-08T22:41:13.829241",
+      "response_data": null
+    }
+  ]
+}
