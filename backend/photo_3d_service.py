@@ -25,7 +25,7 @@ _jobs: Dict[str, Dict[str, Any]] = {}
 
 
 def _is_dev_mode() -> bool:
-    return os.environ.get("ENVIRONMENT", "production") == "development"
+    return os.environ.get("ENVIRONMENT", "development") == "development"
 
 
 def start_photo_3d_job(media_id: str, user_id: str, db: Session) -> Dict[str, Any]:
