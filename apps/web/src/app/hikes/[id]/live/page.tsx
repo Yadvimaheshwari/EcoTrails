@@ -186,8 +186,15 @@ export default function HikeModeLivePage() {
           ) {
             setTrailBounds(bounds);
           }
+          // Store the trail route coordinates for display
+          const geojson = routeRes.data?.geojson;
+          if (geojson && geojson.coordinates && Array.isArray(geojson.coordinates)) {
+            setTrailRoute(geojson.coordinates);
+            console.log('[HikeMode] Trail route loaded with', geojson.coordinates.length, 'points');
+          }
         } catch (e) {
           // Non-fatal
+          console.warn('[HikeMode] Failed to load trail route:', e);
         }
       }
 
