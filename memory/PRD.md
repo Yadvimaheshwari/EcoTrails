@@ -89,13 +89,20 @@ EcoTrails is a comprehensive hiking companion app for national and state parks i
 
 ### Session 2 Fixes
 - ✅ Fixed offline map PDF download (parkCode matching issue)
-  - Added direct park name to code mapping for major parks
-  - Updated Yellowstone PDF URL to 2025 version
+  - Added direct park name→code mapping for 50+ major parks
+  - Updated PDF URLs for Yellowstone, Grand Canyon, Zion, Yosemite
+  - Fixed duplicate key bug in official_map_service.py
 - ✅ Fixed trail route display in hike mode
   - Web: Added trailRoute state and Leaflet polyline rendering
   - Mobile: Added trail route fetch and react-native-maps Polyline
 - ✅ Synced web changes to frontend deployment folder
 - ✅ Mobile app already has feature parity (screens, services, gamification)
+
+### Session 3 Fixes (AI Services)
+- ✅ Photo Enhancement: Updated to use emergentintegrations library with Nano Banana
+- ✅ 3D Converter: Fixed dev mode detection (ENVIRONMENT=development)
+- ✅ Video Generation: Updated to use emergentintegrations for graceful handling
+- ✅ Offline Maps: All 4 major parks now working (Yellowstone 8.2MB, Yosemite 2.4MB, Grand Canyon 0.7MB, Zion 4.8MB)
 
 ## Backlog / Future Enhancements
 
