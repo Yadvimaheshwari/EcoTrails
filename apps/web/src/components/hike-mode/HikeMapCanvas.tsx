@@ -26,6 +26,7 @@ export function HikeMapCanvas({
   trailBounds = null,
   currentLocation,
   routePoints,
+  trailRoute = [],
   discoveryNodes,
   captures,
   mapLayer,
@@ -37,6 +38,7 @@ export function HikeMapCanvas({
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const markersRef = useRef<Map<string, any>>(new Map());
   const routeLayerRef = useRef<any>(null);
+  const trailRouteLayerRef = useRef<any>(null);
   const userMarkerRef = useRef<any>(null);
   const hasInitialized = useRef(false);
 
