@@ -1,5 +1,10 @@
 
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv('/app/backend/.env')
+
 import json
 import base64
 import logging
