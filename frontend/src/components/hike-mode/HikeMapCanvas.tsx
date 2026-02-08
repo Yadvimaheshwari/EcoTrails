@@ -13,6 +13,7 @@ interface HikeMapCanvasProps {
   trailBounds?: { north: number; south: number; east: number; west: number } | null;
   currentLocation: { lat: number; lng: number } | null;
   routePoints: Array<{ lat: number; lng: number; timestamp: number }>;
+  trailRoute?: Array<[number, number]>; // Pre-defined trail route [lng, lat] GeoJSON format
   discoveryNodes: DiscoveryNodeWithStatus[];
   captures: DiscoveryCapture[];
   mapLayer: 'topo' | 'satellite' | 'terrain';
@@ -25,6 +26,7 @@ export function HikeMapCanvas({
   trailBounds = null,
   currentLocation,
   routePoints,
+  trailRoute = [],
   discoveryNodes,
   captures,
   mapLayer,
@@ -36,6 +38,7 @@ export function HikeMapCanvas({
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const markersRef = useRef<Map<string, any>>(new Map());
   const routeLayerRef = useRef<any>(null);
+  const trailRouteLayerRef = useRef<any>(null);
   const userMarkerRef = useRef<any>(null);
   const hasInitialized = useRef(false);
 
@@ -196,7 +199,30 @@ export function HikeMapCanvas({
 
   }, [currentLocation, mapInstance]);
 
-  // Update route polyline
+  // Display pre-defined trail route
+  useEffect(() => {
+    if (!mapInstance || trailRoute.length < 2) return;
+
+    const L = require('leaflet');
+
+    if (trailRouteLayerRef.current) {
+      mapInstance.removeLayer(trailRouteLayerRef.current);
+    }
+
+    // Convert [lng, lat] GeoJSON format to [lat, lng] Leaflet format
+    const latlngs = trailRoute.map(coord => [coord[1], coord[0]]);
+    trailRouteLayerRef.current = L.polyline(latlngs, {
+      color: '#FF6B35',  // Orange for trail route
+      weight: 5,
+      opacity: 0.7,
+      dashArray: '10, 10',  // Dashed line for trail
+    }).addTo(mapInstance);
+
+    console.log('[HikeMapCanvas] Trail route rendered with', trailRoute.length, 'points');
+
+  }, [trailRoute, mapInstance]);
+
+  // Update user route polyline (tracked path)
   useEffect(() => {
     if (!mapInstance || routePoints.length < 2) return;
 
@@ -208,12 +234,13 @@ export function HikeMapCanvas({
 
     const latlngs = routePoints.map(p => [p.lat, p.lng]);
     routeLayerRef.current = L.polyline(latlngs, {
-      color: '#4F8A6B',
+      color: '#4F8A6B',  // Green for user's tracked path
       weight: 4,
-      opacity: 0.8,
+      opacity: 0.9,
     }).addTo(mapInstance);
 
   }, [routePoints, mapInstance]);
+
 
   // Update discovery markers
   useEffect(() => {

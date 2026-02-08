@@ -88,6 +88,7 @@ export default function HikeModeLivePage() {
   const [error, setError] = useState<string | null>(null);
   const [trailCenter, setTrailCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [trailBounds, setTrailBounds] = useState<{ north: number; south: number; east: number; west: number } | null>(null);
+  const [trailRoute, setTrailRoute] = useState<Array<[number, number]>>([]);  // [lng, lat] GeoJSON format
   
   // Camera Discovery state
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -185,8 +186,15 @@ export default function HikeModeLivePage() {
           ) {
             setTrailBounds(bounds);
           }
+          // Store the trail route coordinates for display
+          const geojson = routeRes.data?.geojson;
+          if (geojson && geojson.coordinates && Array.isArray(geojson.coordinates)) {
+            setTrailRoute(geojson.coordinates);
+            console.log('[HikeMode] Trail route loaded with', geojson.coordinates.length, 'points');
+          }
         } catch (e) {
           // Non-fatal
+          console.warn('[HikeMode] Failed to load trail route:', e);
         }
       }
 
@@ -689,6 +697,7 @@ export default function HikeModeLivePage() {
           trailBounds={trailBounds}
           currentLocation={state.currentLocation}
           routePoints={state.routePoints}
+          trailRoute={trailRoute}
           discoveryNodes={getNodesWithStatus()}
           captures={state.captures}
           mapLayer={mapLayer}
