@@ -121,7 +121,7 @@ class EcoTrailsFixesTester:
             }
             
             # Test if endpoint exists and handles requests properly
-            response = self.session.post(f"{self.base_url}/api/v1/photo/enhance", 
+            response = self.session.post(f"{self.base_url}/api/v1/ai/enhance-photo", 
                                        json=payload, timeout=15)
             
             if response.status_code == 200:
