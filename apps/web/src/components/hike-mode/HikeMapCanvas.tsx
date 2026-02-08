@@ -13,6 +13,7 @@ interface HikeMapCanvasProps {
   trailBounds?: { north: number; south: number; east: number; west: number } | null;
   currentLocation: { lat: number; lng: number } | null;
   routePoints: Array<{ lat: number; lng: number; timestamp: number }>;
+  trailRoute?: Array<[number, number]>; // Pre-defined trail route [lng, lat] GeoJSON format
   discoveryNodes: DiscoveryNodeWithStatus[];
   captures: DiscoveryCapture[];
   mapLayer: 'topo' | 'satellite' | 'terrain';
