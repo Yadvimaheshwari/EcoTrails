@@ -199,7 +199,30 @@ export function HikeMapCanvas({
 
   }, [currentLocation, mapInstance]);
 
-  // Update route polyline
+  // Display pre-defined trail route
+  useEffect(() => {
+    if (!mapInstance || trailRoute.length < 2) return;
+
+    const L = require('leaflet');
+
+    if (trailRouteLayerRef.current) {
+      mapInstance.removeLayer(trailRouteLayerRef.current);
+    }
+
+    // Convert [lng, lat] GeoJSON format to [lat, lng] Leaflet format
+    const latlngs = trailRoute.map(coord => [coord[1], coord[0]]);
+    trailRouteLayerRef.current = L.polyline(latlngs, {
+      color: '#FF6B35',  // Orange for trail route
+      weight: 5,
+      opacity: 0.7,
+      dashArray: '10, 10',  // Dashed line for trail
+    }).addTo(mapInstance);
+
+    console.log('[HikeMapCanvas] Trail route rendered with', trailRoute.length, 'points');
+
+  }, [trailRoute, mapInstance]);
+
+  // Update user route polyline (tracked path)
   useEffect(() => {
     if (!mapInstance || routePoints.length < 2) return;
 
@@ -211,12 +234,13 @@ export function HikeMapCanvas({
 
     const latlngs = routePoints.map(p => [p.lat, p.lng]);
     routeLayerRef.current = L.polyline(latlngs, {
-      color: '#4F8A6B',
+      color: '#4F8A6B',  // Green for user's tracked path
       weight: 4,
-      opacity: 0.8,
+      opacity: 0.9,
     }).addTo(mapInstance);
 
   }, [routePoints, mapInstance]);
+
 
   // Update discovery markers
   useEffect(() => {
