@@ -78,6 +78,11 @@ npm install
 npx expo start
 ```
 
+### Maps note (important)
+
+- **Expo Go (iOS)**: the app uses the default iOS map provider (Apple Maps). This is the most reliable setup while using Expo Go.
+- **Google Maps on iOS**: requires a **native build** (Dev Client / `expo run:ios`) so the Google Maps iOS SDK can be included. That’s when Xcode matters.
+
 ## Web App (Next.js)
 
 ### Setup
@@ -92,12 +97,44 @@ cd apps/web
 npm install
 ```
 
-3. Run development server:
+3. Configure environment (recommended):
+
+Create `apps/web/.env.local`:
+
+```env
+# Required for interactive Google Maps (web)
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_google_maps_key
+
+# Web → backend API base URL
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+```
+
+4. Run development server (restart after any env changes):
 ```bash
 npm run dev
 ```
 
 The web app will be available at `http://localhost:3000`
+
+## Xcode installed — what to do next (only needed for native iOS builds)
+
+If you’re staying on **Expo Go**, you can ignore this section.
+
+1. Open Xcode once (it may finish installing components).
+2. In Xcode: **Settings/Preferences → Locations → Command Line Tools** → select an Xcode version.
+3. Accept licenses (Terminal):
+
+```bash
+sudo xcodebuild -license accept
+```
+
+4. Ensure the active developer directory points to Xcode (Terminal):
+
+```bash
+sudo xcode-select -switch /Applications/Xcode.app/Contents/Developer
+```
+
+Then you can build a Dev Client / native iOS app (example, from `apps/mobile`): `npm run start:dev` or `npx expo run:ios`.
 
 ## Features
 

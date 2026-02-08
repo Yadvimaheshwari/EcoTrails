@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, Animated } from 'react-native';
-import { colors, spacing } from '@ecotrails/shared/design';
+import { colors, spacing } from '../../shared/design';
 import { Text } from './Text';
 
 interface LoadingStateProps {
@@ -98,7 +98,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: spacing[8],
+    padding: spacing['3xl'],
   },
   spinner: {
     width: 40,
@@ -107,14 +107,14 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: colors.border,
     borderTopColor: colors.pineGreen,
-    marginBottom: spacing[4],
+    marginBottom: spacing.lg,
   },
   shimmer: {
     width: 200,
     height: 200,
     borderRadius: 100,
     backgroundColor: colors.stoneGray,
-    marginBottom: spacing[4],
+    marginBottom: spacing.lg,
   },
   breathingCircle: {
     width: 80,
@@ -122,9 +122,9 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     backgroundColor: colors.pineGreen,
     opacity: 0.3,
-    marginBottom: spacing[4],
+    marginBottom: spacing.lg,
   },
   message: {
-    marginTop: spacing[4],
+    marginTop: spacing.lg,
   },
 });

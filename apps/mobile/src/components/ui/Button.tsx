@@ -1,6 +1,6 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle, TextStyle } from 'react-native';
-import { colors, borderRadius, spacing } from '@ecotrails/shared/design';
+import { TouchableOpacity, Text, StyleProp, StyleSheet, ActivityIndicator, ViewStyle, TextStyle } from 'react-native';
+import { colors, borderRadius, spacing } from '../../shared/design';
 import { typography } from '../../config/typography';
 
 interface ButtonProps {
@@ -10,7 +10,7 @@ interface ButtonProps {
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
   disabled?: boolean;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -47,7 +47,7 @@ export const Button: React.FC<ButtonProps> = ({
 
 const styles = StyleSheet.create({
   button: {
-    borderRadius: parseInt(borderRadius.base),
+    borderRadius: borderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -67,18 +67,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   button_sm: {
-    paddingHorizontal: parseInt(spacing[4]),
-    paddingVertical: parseInt(spacing[2]),
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
     minHeight: 36,
   },
   button_md: {
-    paddingHorizontal: parseInt(spacing[6]),
-    paddingVertical: parseInt(spacing[3]),
+    paddingHorizontal: spacing['2xl'],
+    paddingVertical: spacing.md,
     minHeight: 48,
   },
   button_lg: {
-    paddingHorizontal: parseInt(spacing[8]),
-    paddingVertical: parseInt(spacing[4]),
+    paddingHorizontal: spacing['3xl'],
+    paddingVertical: spacing.lg,
     minHeight: 56,
   },
   buttonDisabled: {

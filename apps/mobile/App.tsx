@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text as RNText, StyleSheet } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { useAuthStore } from './src/store/useAuthStore';
@@ -17,10 +17,18 @@ import { DeviceManagerScreen } from './src/screens/DeviceManagerScreen';
 import { AppleWatchConnectScreen } from './src/screens/AppleWatchConnectScreen';
 import { GarminConnectScreen } from './src/screens/GarminConnectScreen';
 import { FitbitConnectScreen } from './src/screens/FitbitConnectScreen';
+import { HikeDetailScreen } from './src/screens/HikeDetailScreen';
+import { TripPlannerScreen } from './src/screens/TripPlannerScreen';
+import { TripPlansScreen } from './src/screens/TripPlansScreen';
+import { TripPlanDetailScreen } from './src/screens/TripPlanDetailScreen';
+import { OfflineMapsScreen } from './src/screens/OfflineMapsScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { colors } from './src/config/colors';
+import { DebugBanner } from './src/components/DebugBanner';
+import { API_BASE_URL } from './src/config/api';
 
 const Stack = createNativeStackNavigator();
+const navigationRef = createNavigationContainerRef();
 
 // Lazy-load DuringHikeScreen to avoid react-native-reanimated native crash
 // with older Expo Go versions. Loaded on-demand when user navigates to it.
@@ -65,9 +73,11 @@ const DuringHikeScreenWrapper = (props: any) => {
 export default function App() {
   const { loadAuth, isLoading, user } = useAuthStore();
   const [appReady, setAppReady] = useState(false);
+  const enableLegacyScreens = process.env.EXPO_PUBLIC_ENABLE_LEGACY_SCREENS === '1';
 
   useEffect(() => {
     const init = async () => {
+      console.log('[EcoTrails] API_BASE_URL:', API_BASE_URL);
       try {
         initializeDB();
       } catch (e) {
@@ -84,8 +94,21 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer
+      ref={navigationRef}
+      onStateChange={() => {
+        try {
+          const r = navigationRef.getCurrentRoute();
+          if (r?.name) {
+            console.log('[EcoTrails] Route:', r.name);
+          }
+        } catch {
+          // ignore
+        }
+      }}
+    >
       <StatusBar style="dark" />
+      <DebugBanner />
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
@@ -97,19 +120,28 @@ export default function App() {
         ) : (
           <>
             <Stack.Screen name="MainTabs" component={TabNavigator} />
+            <Stack.Screen name="HikeDetail" component={HikeDetailScreen} />
+            <Stack.Screen name="TripPlanner" component={TripPlannerScreen} />
+            <Stack.Screen name="TripPlans" component={TripPlansScreen} />
+            <Stack.Screen name="TripPlanDetail" component={TripPlanDetailScreen} />
             <Stack.Screen name="TrailDetail" component={TrailDetailScreen} />
             <Stack.Screen name="PlaceDetail" component={PlaceDetailScreen} />
             <Stack.Screen name="TrackingSetup" component={TrackingSetupScreen} />
             <Stack.Screen name="DuringHike" component={DuringHikeScreenWrapper} />
             <Stack.Screen name="EndHike" component={EndHikeScreen} />
             <Stack.Screen name="PostHikeReport" component={PostHikeReportScreen} />
-            <Stack.Screen name="DeviceManager" component={DeviceManagerScreen} />
-            <Stack.Screen name="AppleWatchConnect" component={AppleWatchConnectScreen} />
-            <Stack.Screen name="GarminConnect" component={GarminConnectScreen} />
-            <Stack.Screen name="FitbitConnect" component={FitbitConnectScreen} />
-            <Stack.Screen name="EcoDroidConnect" component={EcoDroidConnectScreen} />
+            {enableLegacyScreens ? (
+              <>
+                <Stack.Screen name="DeviceManager" component={DeviceManagerScreen} />
+                <Stack.Screen name="AppleWatchConnect" component={AppleWatchConnectScreen} />
+                <Stack.Screen name="GarminConnect" component={GarminConnectScreen} />
+                <Stack.Screen name="FitbitConnect" component={FitbitConnectScreen} />
+                <Stack.Screen name="EcoDroidConnect" component={EcoDroidConnectScreen} />
+              </>
+            ) : null}
             <Stack.Screen name="CaptureMoment" component={CaptureMomentScreen} />
             <Stack.Screen name="MediaPicker" component={MediaPickerScreen} />
+            <Stack.Screen name="OfflineMaps" component={OfflineMapsScreen} />
           </>
         )}
       </Stack.Navigator>

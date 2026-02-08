@@ -11,9 +11,12 @@ import {
   ScrollView,
   TouchableOpacity,
   FlatList,
+  TextInput,
   Dimensions,
   Image,
   ActivityIndicator,
+  Platform,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
@@ -27,6 +30,9 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { TrailSelectSheet } from '../components/discovery/TrailSelectSheet';
 import { useHikeStore } from '../store/useHikeStore';
 import { formatMiles, formatFeet } from '../utils/formatting';
+import { downloadOfflineMapPdfToDevice, getOfflinePdfMap, openOfflinePdf } from '../services/offlinePdfMaps';
+import { space as uiSpace } from '../ui';
+import { Title, BodyText, SectionHeader } from '../ui';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MAP_HEIGHT = SCREEN_HEIGHT * 0.35;
@@ -73,12 +79,65 @@ export const PlaceDetailScreen: React.FC = ({ route, navigation }: any) => {
   const [place, setPlace] = useState<Place | null>(null);
   const [trails, setTrails] = useState<Trail[]>([]);
   const [loading, setLoading] = useState(true);
+  const [trailsLoading, setTrailsLoading] = useState(true);
+  const [trailsError, setTrailsError] = useState<string | null>(null);
   const [selectedTrail, setSelectedTrail] = useState<Trail | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
   const [startingHike, setStartingHike] = useState(false);
   const [wildlife, setWildlife] = useState<Array<{ name: string; category: string; likelihood: string }>>([]);
   const [activities, setActivities] = useState<Array<{ name: string; xp: number; description: string }>>([]);
   const { startHike } = useHikeStore();
+
+  // Web-parity: weather + alerts + offline PDF states
+  const [weather, setWeather] = useState<any>(null);
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [parkCode, setParkCode] = useState<string | null>(null);
+  const [mapAssets, setMapAssets] = useState<Array<{ url: string; title?: string }>>([]);
+  const [mapsLoading, setMapsLoading] = useState(false);
+  const [offlineStatus, setOfflineStatus] = useState<'not_downloaded' | 'downloading' | 'ready' | 'failed'>('not_downloaded');
+  const [offlineMessage, setOfflineMessage] = useState<string | null>(null);
+  const [offlineUnavailable, setOfflineUnavailable] = useState(false);
+
+  // Web-ish trail filtering
+  const [trailQuery, setTrailQuery] = useState('');
+  const [difficultyFilter, setDifficultyFilter] = useState<Array<'easy' | 'moderate' | 'hard'>>([]);
+
+  const normalizePlace = (data: any): Place | null => {
+    if (!data) return null;
+    const loc = data.location || data?.place?.location || null;
+    const lat = typeof loc?.lat === 'number' ? loc.lat : typeof data?.lat === 'number' ? data.lat : undefined;
+    const lng = typeof loc?.lng === 'number' ? loc.lng : typeof data?.lng === 'number' ? data.lng : undefined;
+    return {
+      id: data.id,
+      name: data.name,
+      description: data.description,
+      lat,
+      lng,
+      imageUrl: data.imageUrl || data.image_url,
+      wildlife: data.wildlife,
+      activities: data.activities,
+    };
+  };
+
+  const loadMapAssets = async (pc: string) => {
+    if (!pc) return;
+    setMapsLoading(true);
+    try {
+      const res = await api.get(`/api/nps/parks/${encodeURIComponent(pc)}`);
+      const assets = res.data?.mapAssets || res.data?.map_assets || [];
+      const list = Array.isArray(assets) ? assets : [];
+      setMapAssets(
+        list
+          .map((a: any) => ({ url: a?.url || a?.href, title: a?.title }))
+          .filter((x: any) => typeof x.url === 'string' && x.url.startsWith('http'))
+          .slice(0, 8)
+      );
+    } catch {
+      setMapAssets([]);
+    } finally {
+      setMapsLoading(false);
+    }
+  };
 
   useEffect(() => {
     loadPlaceData();
@@ -89,8 +148,43 @@ export const PlaceDetailScreen: React.FC = ({ route, navigation }: any) => {
       setLoading(true);
       const response = await api.get(`/api/v1/places/${placeId}`);
       const data = response.data;
-      setPlace(data.place);
+      // Backend contract matches web: the place object is the response itself.
+      setPlace(normalizePlace(data));
       setTrails(data.trails || []);
+
+      // Load richer trails list (with coords/bounds when available)
+      setTrailsLoading(true);
+      setTrailsError(null);
+      api
+        .get(`/api/v1/places/${placeId}/trails`)
+        .then((r) => {
+          const t = r.data?.trails || r.data || [];
+          if (Array.isArray(t)) setTrails(t);
+        })
+        .catch((e) => {
+          setTrailsError(e?.response?.data?.detail || e?.message || 'Failed to load trails');
+        })
+        .finally(() => setTrailsLoading(false));
+
+      // Non-blocking: weather + alerts
+      api.get(`/api/v1/places/${placeId}/weather`).then((r) => setWeather(r.data)).catch(() => {});
+      api
+        .get(`/api/v1/places/${placeId}/alerts`)
+        .then((r) => {
+          setAlerts(r.data?.alerts || []);
+          const pc = r.data?.park_code || null;
+          setParkCode(pc);
+          if (pc) loadMapAssets(pc);
+        })
+        .catch(() => {});
+
+      // Offline PDF status
+      const existing = await getOfflinePdfMap(placeId);
+      if (existing) {
+        setOfflineStatus('ready');
+        setOfflineUnavailable(false);
+        setOfflineMessage(null);
+      }
       
       // Load wildlife and activities from API or use fallback data
       if (data.wildlife) {
@@ -149,7 +243,22 @@ export const PlaceDetailScreen: React.FC = ({ route, navigation }: any) => {
 
     setStartingHike(true);
     try {
-      await startHike(selectedTrail.id, placeId, selectedTrail.name);
+      // Capture trail coordinates at tap-time (required so the active hike map is correct)
+      const geo = selectedTrail.routeGeometry || selectedTrail.route_geometry;
+      const firstPoint = Array.isArray(geo) && geo.length > 0 ? geo[0] : null;
+      const trailLocation =
+        typeof (selectedTrail as any).lat === 'number' && typeof (selectedTrail as any).lng === 'number'
+          ? { lat: (selectedTrail as any).lat, lng: (selectedTrail as any).lng }
+          : firstPoint && typeof firstPoint.lat === 'number' && typeof firstPoint.lng === 'number'
+            ? { lat: firstPoint.lat, lng: firstPoint.lng }
+            : place?.lat && place?.lng
+              ? { lat: place.lat, lng: place.lng }
+              : null;
+
+      const md: any = (selectedTrail as any).meta_data || (selectedTrail as any).metadata || {};
+      const trailBounds = md?.bounding_box || md?.bounds || md?.bbox || null;
+
+      await startHike(selectedTrail.id, placeId, selectedTrail.name, trailLocation, trailBounds);
       handleCloseSheet();
 
       // Navigate to the hike screen
@@ -158,11 +267,43 @@ export const PlaceDetailScreen: React.FC = ({ route, navigation }: any) => {
         trailName: selectedTrail.name,
         placeId,
         parkName: place?.name,
+        trailLat: trailLocation?.lat,
+        trailLng: trailLocation?.lng,
+        trailBounds: trailBounds,
       });
     } catch (error) {
       console.error('Failed to start hike:', error);
     } finally {
       setStartingHike(false);
+    }
+  };
+
+  const handleDownloadOfflinePdf = async () => {
+    if (!placeId) return;
+    setOfflineMessage(null);
+    setOfflineStatus('downloading');
+    const result = await downloadOfflineMapPdfToDevice({ placeId, parkName: place?.name });
+    if (result.ok) {
+      setOfflineStatus('ready');
+      setOfflineUnavailable(false);
+      setOfflineMessage(null);
+      return;
+    }
+    if ((result.reason || '').toLowerCase().includes('offline map not available')) {
+      setOfflineStatus('failed');
+      setOfflineUnavailable(true);
+      setOfflineMessage('Offline map not available for this park');
+      return;
+    }
+    setOfflineStatus('failed');
+    setOfflineMessage(result.reason);
+  };
+
+  const handleOpenOfflinePdf = async () => {
+    const existing = await getOfflinePdfMap(placeId);
+    if (existing?.localUri) {
+      await openOfflinePdf(existing.localUri);
+      return;
     }
   };
 
@@ -187,6 +328,24 @@ export const PlaceDetailScreen: React.FC = ({ route, navigation }: any) => {
   const getDifficultyStyle = (difficulty?: string) => {
     const key = difficulty?.toLowerCase() || 'easy';
     return DIFFICULTY_COLORS[key] || DIFFICULTY_COLORS.easy;
+  };
+
+  const filteredTrails = trails.filter((t) => {
+    const q = trailQuery.trim().toLowerCase();
+    if (q) {
+      const name = String(t.name || '').toLowerCase();
+      const desc = String(t.description || '').toLowerCase();
+      if (!name.includes(q) && !desc.includes(q)) return false;
+    }
+    if (difficultyFilter.length > 0) {
+      const d = String(t.difficulty || '').toLowerCase();
+      if (!difficultyFilter.includes(d as any)) return false;
+    }
+    return true;
+  });
+
+  const toggleDiff = (d: 'easy' | 'moderate' | 'hard') => {
+    setDifficultyFilter((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]));
   };
 
   if (loading) {
@@ -214,19 +373,135 @@ export const PlaceDetailScreen: React.FC = ({ route, navigation }: any) => {
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
-          <Text variant="h3" numberOfLines={1} style={styles.headerTitle}>
+          <Title level={3} numberOfLines={1} style={styles.headerTitle as any}>
             {place?.name || 'Park Details'}
-          </Text>
+          </Title>
         </View>
         <View style={styles.headerSpacer} />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Web-parity header stats + offline download */}
+        <View style={styles.topCardRow}>
+          <Card style={styles.topCard}>
+            <BodyText muted style={{ fontSize: 12 }}>
+              Trails
+            </BodyText>
+            <Title level={2}>{trails.length}</Title>
+          </Card>
+          <Card style={styles.topCard}>
+            <BodyText muted style={{ fontSize: 12 }}>
+              Total miles
+            </BodyText>
+            <Title level={2}>
+              {trails.reduce((sum: number, t: any) => sum + (t.distance_miles || t.lengthMiles || 0), 0).toFixed(1)}
+            </Title>
+          </Card>
+        </View>
+
+        <Card style={styles.offlineCard}>
+          <SectionHeader title="Offline map" />
+          <BodyText muted style={{ marginTop: 6, fontSize: 12 }}>
+            Download an official printable PDF when available.
+          </BodyText>
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+            <Button
+              title={offlineStatus === 'downloading' ? 'Downloading…' : '📥 Download Offline Map (PDF)'}
+              onPress={handleDownloadOfflinePdf}
+              disabled={offlineStatus === 'downloading' || offlineUnavailable}
+              variant="primary"
+            />
+            {offlineStatus === 'ready' ? (
+              <Button title="Open" onPress={handleOpenOfflinePdf} variant="outline" />
+            ) : null}
+          </View>
+          {offlineStatus === 'ready' ? (
+            <BodyText style={{ marginTop: 10, color: colors.success, fontSize: 12 }}>
+              Offline map downloaded
+            </BodyText>
+          ) : null}
+          {offlineMessage ? (
+            <BodyText muted style={{ marginTop: 10, fontSize: 12 }}>
+              {offlineMessage}
+            </BodyText>
+          ) : null}
+          <TouchableOpacity onPress={() => navigation.navigate('OfflineMaps')} style={{ marginTop: 12 }}>
+            <BodyText style={{ color: colors.primary, fontSize: 12 }}>
+              View all offline maps
+            </BodyText>
+          </TouchableOpacity>
+        </Card>
+
+        <Card style={styles.offlineCard}>
+          <SectionHeader title="Maps" />
+          <BodyText muted style={{ marginTop: 6, fontSize: 12 }}>
+            Official printable PDFs (when available){parkCode ? ` • NPS: ${String(parkCode).toUpperCase()}` : ''}.
+          </BodyText>
+          {mapsLoading ? (
+            <BodyText muted style={{ marginTop: 10, fontSize: 12 }}>
+              Loading map PDFs…
+            </BodyText>
+          ) : mapAssets.length === 0 ? (
+            <BodyText muted style={{ marginTop: 10, fontSize: 12 }}>
+              No official PDF links found yet.
+            </BodyText>
+          ) : (
+            <View style={{ marginTop: 10 }}>
+              {mapAssets.map((a, idx) => {
+                const label =
+                  a.title ||
+                  decodeURIComponent(String(a.url).split('/').pop() || 'PDF').replace(/_/g, ' ');
+                return (
+                  <TouchableOpacity
+                    key={`${a.url}-${idx}`}
+                    activeOpacity={0.75}
+                    onPress={() => Linking.openURL(a.url)}
+                    style={{
+                      paddingVertical: 10,
+                      borderTopWidth: idx === 0 ? 0 : 1,
+                      borderTopColor: colors.border,
+                    }}
+                  >
+                    <BodyText style={{ fontSize: 14 }}>{label}</BodyText>
+                    <BodyText muted style={{ marginTop: 2, fontSize: 12 }}>
+                      Open on NPS.gov →
+                    </BodyText>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </Card>
+
+        {/* Weather + alerts */}
+        {(weather || (alerts && alerts.length > 0)) && (
+          <View style={styles.intelRow}>
+            {weather ? (
+              <Card style={styles.intelCard}>
+                <BodyText muted style={{ fontSize: 12 }}>
+                  Weather
+                </BodyText>
+                <Title level={2}>{weather.temperature ? `${weather.temperature}°F` : '—'}</Title>
+              </Card>
+            ) : null}
+            {alerts && alerts.length > 0 ? (
+              <Card style={styles.intelCard}>
+                <BodyText muted style={{ fontSize: 12 }}>
+                  Alerts
+                </BodyText>
+                <BodyText numberOfLines={2}>
+                  {String(alerts[0]?.title || alerts[0] || 'Alerts available')}
+                </BodyText>
+              </Card>
+            ) : null}
+          </View>
+        )}
+
         {/* Map Preview */}
         <View style={styles.mapContainer}>
           <MapView
             style={styles.map}
-            provider={PROVIDER_GOOGLE}
+            provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
             initialRegion={getMapRegion()}
             scrollEnabled={false}
             zoomEnabled={false}
@@ -377,7 +652,53 @@ export const PlaceDetailScreen: React.FC = ({ route, navigation }: any) => {
             </Text>
           </View>
 
-          {trails.length === 0 ? (
+          {/* Filters */}
+          <View style={{ marginTop: 12 }}>
+            <View style={styles.searchContainer}>
+              <Ionicons name="search-outline" size={18} color={colors.textTertiary} style={{ marginRight: 10 }} />
+              <TextInput
+                value={trailQuery}
+                onChangeText={setTrailQuery}
+                placeholder="Search trails…"
+                placeholderTextColor={colors.textTertiary}
+                style={{ flex: 1, color: colors.text, fontSize: 14 }}
+                returnKeyType="search"
+              />
+            </View>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+              {(['easy', 'moderate', 'hard'] as const).map((d) => {
+                const active = difficultyFilter.includes(d);
+                const s = getDifficultyStyle(d);
+                return (
+                  <TouchableOpacity key={d} onPress={() => toggleDiff(d)} activeOpacity={0.8}>
+                    <View
+                      style={[
+                        styles.filterChip,
+                        { borderColor: active ? s.text : colors.border, backgroundColor: active ? s.bg : colors.surface },
+                      ]}
+                    >
+                      <Text style={{ color: active ? s.text : colors.textSecondary, fontSize: 12, fontWeight: '600' as any }}>
+                        {d}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text variant="caption" color="secondary" style={{ marginTop: 10 }}>
+              Showing {filteredTrails.length} of {trails.length}
+            </Text>
+          </View>
+
+          {trailsLoading ? (
+            <View style={{ paddingVertical: 18 }}>
+              <BodyText muted style={{ fontSize: 12 }}>Loading trails…</BodyText>
+            </View>
+          ) : trailsError ? (
+            <View style={{ paddingVertical: 18 }}>
+              <BodyText muted style={{ fontSize: 12 }}>{trailsError}</BodyText>
+            </View>
+          ) : trails.length === 0 ? (
             <EmptyState
               icon="map-outline"
               title="No trails found"
@@ -385,7 +706,7 @@ export const PlaceDetailScreen: React.FC = ({ route, navigation }: any) => {
             />
           ) : (
             <FlatList
-              data={trails}
+              data={filteredTrails}
               scrollEnabled={false}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => {
@@ -522,6 +843,28 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
+  topCardRow: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: uiSpace[4],
+    paddingTop: uiSpace[4],
+  },
+  topCard: {
+    flex: 1,
+  },
+  offlineCard: {
+    marginTop: 12,
+    marginHorizontal: uiSpace[4],
+  },
+  intelRow: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: uiSpace[4],
+    marginTop: 12,
+  },
+  intelCard: {
+    flex: 1,
+  },
   mapContainer: {
     height: MAP_HEIGHT,
     position: 'relative',
@@ -606,6 +949,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  filterChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   trailCard: {
     marginBottom: 12,

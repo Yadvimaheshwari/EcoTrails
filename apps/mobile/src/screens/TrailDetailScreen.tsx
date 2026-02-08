@@ -56,7 +56,20 @@ export const TrailDetailScreen: React.FC = ({ route, navigation }: any) => {
       console.error('Missing placeId');
       return;
     }
-    await startHike(trailId || null, placeId, trail?.name);
+    const loc = (trail?.meta_data?.trailLocation || trail?.meta_data?.location || trail?.location || {}) as any;
+    const trailLocation =
+      typeof trail?.lat === 'number' && typeof trail?.lng === 'number'
+        ? { lat: trail.lat, lng: trail.lng }
+        : typeof loc?.lat === 'number' && typeof loc?.lng === 'number'
+          ? { lat: loc.lat, lng: loc.lng }
+          : null;
+
+    const bounds =
+      (trail?.meta_data || trail?.metadata || {})?.bounding_box ||
+      (trail?.meta_data || trail?.metadata || {})?.bounds ||
+      null;
+
+    await startHike(trailId || null, placeId, trail?.name, trailLocation, bounds);
     navigation.navigate('TrackingSetup');
   };
 
@@ -68,7 +81,11 @@ export const TrailDetailScreen: React.FC = ({ route, navigation }: any) => {
     );
   }
 
-  const location = trail.place?.location || { lat: 37.7749, lng: -122.4194 };
+  const location =
+    typeof trail?.lat === 'number' && typeof trail?.lng === 'number'
+      ? { lat: trail.lat, lng: trail.lng }
+      : trail?.meta_data?.location || trail?.location || trail?.place?.location || null;
+  const hasLocation = typeof (location as any)?.lat === 'number' && typeof (location as any)?.lng === 'number';
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -80,15 +97,31 @@ export const TrailDetailScreen: React.FC = ({ route, navigation }: any) => {
         </View>
 
         <View style={styles.mapContainer}>
-          <MapView
-            style={styles.map}
-            initialRegion={{
-              latitude: (location as any).lat,
-              longitude: (location as any).lng,
-              latitudeDelta: 0.01,
-              longitudeDelta: 0.01,
-            }}
-          />
+          {hasLocation ? (
+            <MapView
+              style={styles.map}
+              initialRegion={{
+                latitude: (location as any).lat,
+                longitude: (location as any).lng,
+                latitudeDelta: 0.01,
+                longitudeDelta: 0.01,
+              }}
+            >
+              {Array.isArray(trail?.route_geometry) && trail.route_geometry.length > 1 ? (
+                <Polyline
+                  coordinates={trail.route_geometry.map((p: any) => ({ latitude: p.lat, longitude: p.lng }))}
+                  strokeColor={colors.primary}
+                  strokeWidth={3}
+                />
+              ) : null}
+            </MapView>
+          ) : (
+            <View style={[styles.map, { alignItems: 'center', justifyContent: 'center' }]}>
+              <Text variant="body" color="secondary">
+                Unable to load trail location. Please try again.
+              </Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.details}>

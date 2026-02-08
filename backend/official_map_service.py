@@ -9,9 +9,11 @@ Enhanced with web scraping to dynamically discover map PDFs.
 import os
 import logging
 import hashlib
-from typing import Optional, Dict, Any, List
-from datetime import datetime, timedelta
-from urllib.parse import urljoin
+from typing import Optional, Dict, Any, List, Tuple
+from datetime import datetime
+from urllib.parse import urljoin, urlparse
+import re
+from difflib import SequenceMatcher
 import requests
 from bs4 import BeautifulSoup
 
@@ -295,6 +297,63 @@ def scrape_park_map_urls(park_url: str, park_name: str) -> List[Dict[str, Any]]:
         logger.error(f"[Scraper] Failed for {park_name}: {e}")
         return []
 
+def _norm(s: str) -> str:
+    s = (s or "").lower()
+    s = re.sub(r"[^a-z0-9\s]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+def _safe_base_url(url: str) -> Optional[str]:
+    """
+    Only allow http(s) URLs and return scheme+netloc base.
+    """
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return None
+        if not parsed.netloc:
+            return None
+        return f"{parsed.scheme}://{parsed.netloc}"
+    except Exception:
+        return None
+
+def _pick_best_map(maps: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    Prefer trail maps, then larger files (when size is known).
+    """
+    if not maps:
+        return None
+    # Prefer trail maps
+    trail = [m for m in maps if (m.get("type") or "").lower() == "trail_map"]
+    candidates = trail or maps
+    # Prefer larger (likely more detailed) if size_mb available
+    def _score(m: Dict[str, Any]) -> Tuple[int, float]:
+        has_size = 1 if (m.get("size_mb") or 0) > 0 else 0
+        size = float(m.get("size_mb") or 0)
+        return (has_size, size)
+    candidates = sorted(candidates, key=_score, reverse=True)
+    return candidates[0]
+
+def build_osm_static_map_url(
+    lat: float,
+    lng: float,
+    zoom: int = 12,
+    size: str = "1024x768",
+) -> str:
+    """
+    Generate a reliable, no-scrape fallback map image URL.
+    Uses staticmap.openstreetmap.de.
+    """
+    # Keep params conservative to avoid overly large images.
+    z = max(1, min(int(zoom), 18))
+    return (
+        "https://staticmap.openstreetmap.de/staticmap.php"
+        f"?center={lat},{lng}"
+        f"&zoom={z}"
+        f"&size={size}"
+        f"&markers={lat},{lng},red-pushpin"
+    )
+
 
 def scrape_nps_park_page(park_code: str) -> Dict[str, Any]:
     """
@@ -323,13 +382,145 @@ def scrape_nps_park_page(park_code: str) -> Dict[str, Any]:
     
     return {'success': False, 'maps': []}
 
+def _extract_pdf_links_from_html(html: bytes, *, base_url: str) -> List[str]:
+    """
+    Parse HTML and return all .pdf links (absolute or relative) normalized to absolute https://www.nps.gov/ URLs.
+    """
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+    except Exception:
+        return []
+
+    urls: List[str] = []
+    for a in soup.find_all("a"):
+        href = a.get("href")
+        if not href:
+            continue
+        href_s = str(href).strip()
+        if ".pdf" not in href_s.lower():
+            continue
+        abs_url = urljoin(base_url, href_s)
+        try:
+            parsed = urlparse(abs_url)
+            if parsed.scheme not in ("http", "https"):
+                continue
+            # normalize to nps.gov only
+            if "nps.gov" not in (parsed.netloc or ""):
+                continue
+            urls.append(abs_url)
+        except Exception:
+            continue
+
+    # de-dupe while preserving order
+    seen = set()
+    out = []
+    for u in urls:
+        if u in seen:
+            continue
+        seen.add(u)
+        out.append(u)
+    return out
+
+
+def _head_accepts_pdf(url: str) -> Tuple[bool, int, str]:
+    """
+    HEAD gate: accept only (status==200 and content-type contains application/pdf).
+    Returns (ok, status_code, content_type_lower).
+    """
+    try:
+        r = requests.head(url, timeout=10, allow_redirects=True, headers={"User-Agent": "EcoTrails/1.0"})
+        ct = (r.headers.get("content-type") or "").split(";")[0].strip().lower()
+        return (r.status_code == 200 and "application/pdf" in ct, int(r.status_code), ct)
+    except Exception:
+        return (False, 0, "")
+
+
+def _rank_pdf_candidate(url: str, *, park_code: str) -> int:
+    """
+    Rank PDFs to prefer filenames containing: map, brochure, trail, or parkCode.
+    """
+    u = (url or "").lower()
+    filename = u.rsplit("/", 1)[-1]
+    score = 0
+    if park_code and park_code.lower() in filename:
+        score += 40
+    if "map" in filename or "map" in u:
+        score += 20
+    if "trail" in filename or "trail" in u:
+        score += 15
+    if "brochure" in filename or "brochure" in u or "visitor" in u or "guide" in u:
+        score += 10
+    # de-prioritize obvious non-map PDFs
+    if any(bad in filename for bad in ("fee", "fees", "permit", "permits", "accessibility", "access", "press")):
+        score -= 10
+    return score
+
+
+def discover_maps(park_code: str) -> List[str]:
+    """
+    Discovery-first flow (no caching, no singleton state):
+      - Fetch maps.htm and brochures.htm
+      - Extract all .pdf links
+      - Normalize to absolute nps.gov URLs
+    """
+    park_code = (park_code or "").strip().lower()
+    if not park_code:
+        return []
+
+    pages = [
+        f"https://www.nps.gov/{park_code}/planyourvisit/maps.htm",
+        f"https://www.nps.gov/{park_code}/planyourvisit/brochures.htm",
+    ]
+
+    candidates: List[str] = []
+    for page_url in pages:
+        try:
+            resp = requests.get(page_url, timeout=15, headers={"User-Agent": "EcoTrails/1.0"})
+            if resp.status_code != 200:
+                logger.info(f"[OfficialMapDiscovery] parkCode={park_code} page={page_url} status={resp.status_code}")
+                continue
+            candidates.extend(_extract_pdf_links_from_html(resp.content, base_url=page_url))
+        except Exception as e:
+            logger.info(f"[OfficialMapDiscovery] parkCode={park_code} page_fetch_failed page={page_url} err={e}")
+            continue
+
+    return candidates
+
+
+def discover_best_pdf_url(park_code: str) -> Optional[str]:
+    """
+    Given a parkCode, discover and validate a PDF URL:
+      - parse .pdf links from maps.htm + brochures.htm
+      - HEAD validate (200 + application/pdf)
+      - rank and return best candidate
+    """
+    park_code = (park_code or "").strip().lower()
+    candidates = discover_maps(park_code)
+    if not candidates:
+        return None
+
+    accepted: List[Tuple[int, str]] = []
+    for u in candidates:
+        ok, status, ct = _head_accepts_pdf(u)
+        if not ok:
+            logger.debug(f"[OfficialMapDiscovery] parkCode={park_code} reject url={u} status={status} ct={ct!r}")
+            continue
+        accepted.append((_rank_pdf_candidate(u, park_code=park_code), u))
+
+    if not accepted:
+        return None
+
+    accepted.sort(key=lambda x: x[0], reverse=True)
+    return accepted[0][1]
+
 
 class OfficialMapService:
     """Service for fetching official park maps with web scraping support"""
     
     def __init__(self):
-        self.cache: Dict[str, Dict[str, Any]] = {}
-        self.cache_ttl_days = 7  # Cache maps for 7 days
+        # Prevent obviously-wrong NPS matches (e.g., state parks) from being treated as NPS.
+        # If the best NPS API result is below this similarity score, we do NOT scrape NPS.
+        self.nps_min_match_score = float(os.environ.get("NPS_MIN_MATCH_SCORE", "0.68"))
     
     def fetch_nps_map(self, park_name: str) -> Optional[Dict[str, Any]]:
         """
@@ -347,19 +538,7 @@ class OfficialMapService:
         # Normalize park name for lookup
         normalized = park_name.lower().strip()
         
-        # Step 1: Check cache with TTL validation
-        cache_key = hashlib.md5(normalized.encode()).hexdigest()
-        if cache_key in self.cache:
-            cached = self.cache[cache_key]
-            # Check if cache is still fresh
-            fetched_at = datetime.fromisoformat(cached.get('fetched_at', datetime.utcnow().isoformat()))
-            if (datetime.utcnow() - fetched_at).days < self.cache_ttl_days:
-                logger.info(f"[OfficialMapService] Cache hit for {park_name}")
-                return cached
-            else:
-                logger.info(f"[OfficialMapService] Cache expired for {park_name}")
-        
-        # Step 2: Try hardcoded database with URL verification
+        # Step 1: Try hardcoded database with URL verification
         for key, data in NPS_MAP_DATABASE.items():
             if key in normalized or normalized in key:
                 # Verify URL still works
@@ -375,7 +554,6 @@ class OfficialMapService:
                             "fetched_at": datetime.utcnow().isoformat(),
                             "method": "database"
                         }
-                        self.cache[cache_key] = result
                         logger.info(f"[OfficialMapService] Database map verified for {park_name}")
                         return result
                     else:
@@ -384,78 +562,136 @@ class OfficialMapService:
                     logger.warning(f"[OfficialMapService] Database URL verification failed: {e}, trying scraping")
                     # Continue to scraping fallback
         
-        # Step 3: Try NPS API + web scraping
+        # Step 2: Try NPS API + discovery
         nps_api_key = os.environ.get("NPS_API_KEY")
         if nps_api_key:
             try:
                 # Get park code from NPS API
                 response = requests.get(
                     "https://developer.nps.gov/api/v1/parks",
-                    params={"q": park_name, "limit": 1, "api_key": nps_api_key},
+                    params={"q": park_name, "limit": 5, "api_key": nps_api_key},
                     timeout=10
                 )
                 
                 if response.status_code == 200:
                     parks = response.json().get("data", [])
                     if parks:
-                        park_code = parks[0].get("parkCode", "")
-                        park_full_name = parks[0].get("fullName", park_name)
+                        from backend.nps_matcher import select_best_nps_park
+
+                        sel = select_best_nps_park(park_name, parks, min_score=50)
+                        if not sel:
+                            logger.info(f"[OfficialMapService] no NPS match >=50 for '{park_name}'")
+                            return None
+
+                        park_code = sel.park_code
+                        park_full_name = sel.full_name or park_name
                         
                         # Scrape park website for maps
                         logger.info(f"[OfficialMapService] Scraping NPS website for {park_code}")
-                        scrape_result = scrape_nps_park_page(park_code)
-                        
-                        if scrape_result['success'] and scrape_result['maps']:
-                            # Prefer trail maps over general park maps
-                            best_map = next(
-                                (m for m in scrape_result['maps'] if m['type'] == 'trail_map'),
-                                scrape_result['maps'][0]
-                            )
-                            
+                        pdf_url = discover_best_pdf_url(park_code)
+                        if pdf_url:
                             result = {
-                                'success': True,
-                                'park_name': park_full_name,
-                                'map_url': best_map['url'],
-                                'source': f"NPS {park_full_name}",
-                                'map_type': best_map['type'],
-                                'park_code': park_code,
-                                'fetched_at': datetime.utcnow().isoformat(),
-                                'method': 'scraping',
-                                'all_maps': scrape_result['maps']  # Include all found maps
+                                "success": True,
+                                "park_name": park_full_name,
+                                "map_url": pdf_url,
+                                "source": f"NPS {park_full_name}",
+                                "map_type": "park_map",
+                                "park_code": park_code,
+                                "fetched_at": datetime.utcnow().isoformat(),
+                                "method": "discovery",
                             }
-                            self.cache[cache_key] = result
-                            logger.info(f"[OfficialMapService] Successfully scraped map for {park_name}")
+                            logger.info(f"[OfficialMapService] Discovered map PDF for {park_name}")
                             return result
-                        else:
-                            # Scraping failed, try guessing URL pattern
-                            logger.info(f"[OfficialMapService] Scraping failed, trying URL pattern guess")
-                            guessed_url = f"https://www.nps.gov/{park_code}/planyourvisit/upload/{park_code.upper()}_Map.pdf"
-                            
-                            # Verify guessed URL
-                            try:
-                                head_response = requests.head(guessed_url, timeout=5, allow_redirects=True)
-                                if head_response.status_code == 200:
-                                    result = {
-                                        'success': True,
-                                        'park_name': park_full_name,
-                                        'map_url': guessed_url,
-                                        'source': f"NPS {park_full_name}",
-                                        'map_type': 'park_map',
-                                        'park_code': park_code,
-                                        'fetched_at': datetime.utcnow().isoformat(),
-                                        'method': 'pattern_guess'
-                                    }
-                                    self.cache[cache_key] = result
-                                    logger.info(f"[OfficialMapService] Guessed URL worked for {park_name}")
-                                    return result
-                            except:
-                                pass
                 
             except Exception as e:
                 logger.error(f"[OfficialMapService] NPS API + scraping failed: {e}")
         
         logger.info(f"[OfficialMapService] No map found for {park_name} after all attempts")
         return None
+
+    def fetch_official_map_asset(
+        self,
+        place_name: str,
+        *,
+        website_url: Optional[str] = None,
+        lat: Optional[float] = None,
+        lng: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Unified entry-point for "offline map asset" downloads.
+
+        Returns a dict:
+          - success: bool
+          - map_url: str | None
+          - asset_type: 'pdf' | 'image' | None
+          - source: str | None
+          - method: str
+        """
+        # 1) NPS PDF (best case)
+        nps = self.fetch_nps_map(place_name)
+        if nps and nps.get("success") and nps.get("map_url"):
+            return {
+                "success": True,
+                "place_name": nps.get("park_name") or place_name,
+                "map_url": nps.get("map_url"),
+                "asset_type": "pdf",
+                "source": nps.get("source") or "Official Park Map",
+                "map_type": nps.get("map_type") or "park_map",
+                "method": nps.get("method") or "nps",
+                "fetched_at": nps.get("fetched_at") or datetime.utcnow().isoformat(),
+            }
+
+        # 2) Scrape the park's own website (if we have it)
+        base = _safe_base_url(website_url) if website_url else None
+        if base:
+            candidates: List[Dict[str, Any]] = []
+            # Try homepage and a few common subpaths.
+            paths = ["", "/maps", "/map", "/visit", "/plan", "/planyourvisit", "/trails", "/brochures"]
+            for p in paths:
+                url = base + p
+                maps = scrape_park_map_urls(url, place_name)
+                if maps:
+                    candidates.extend(maps)
+            best = _pick_best_map(candidates)
+            if best and best.get("url"):
+                return {
+                    "success": True,
+                    "place_name": place_name,
+                    "map_url": best["url"],
+                    "asset_type": "pdf" if ".pdf" in best["url"].lower() else "unknown",
+                    "source": f"{place_name} website",
+                    "map_type": best.get("type") or "park_map",
+                    "method": "website_scrape",
+                    "fetched_at": datetime.utcnow().isoformat(),
+                    "all_maps": candidates[:50],
+                }
+
+        # 3) Guaranteed fallback: OSM static map image (no scraping)
+        if lat is not None and lng is not None:
+            try:
+                url = build_osm_static_map_url(float(lat), float(lng))
+                return {
+                    "success": True,
+                    "place_name": place_name,
+                    "map_url": url,
+                    "asset_type": "image",
+                    "source": "OpenStreetMap (static)",
+                    "map_type": "overview",
+                    "method": "osm_static",
+                    "fetched_at": datetime.utcnow().isoformat(),
+                }
+            except Exception as e:
+                logger.warning(f"[OfficialMapService] Failed building OSM static URL: {e}")
+
+        return {
+            "success": False,
+            "place_name": place_name,
+            "map_url": None,
+            "asset_type": None,
+            "source": None,
+            "method": "none",
+            "fetched_at": datetime.utcnow().isoformat(),
+        }
     
     def _fetch_from_nps_api(self, park_name: str, api_key: str) -> Optional[Dict[str, Any]]:
         """
@@ -470,7 +706,7 @@ class OfficialMapService:
                 "https://developer.nps.gov/api/v1/parks",
                 params={
                     "q": park_name,
-                    "limit": 1,
+                    "limit": 5,
                     "api_key": api_key
                 },
                 timeout=10
@@ -479,20 +715,26 @@ class OfficialMapService:
             if response.status_code == 200:
                 data = response.json()
                 if data.get("data") and len(data["data"]) > 0:
-                    park = data["data"][0]
-                    park_code = park.get("parkCode", "")
-                    
-                    # Construct likely map URL pattern
-                    map_url = f"https://www.nps.gov/{park_code}/planyourvisit/upload/{park_code.upper()}_Map.pdf"
-                    
+                    parks = data["data"]
+                    from backend.nps_matcher import select_best_nps_park
+
+                    sel = select_best_nps_park(park_name, parks, min_score=50)
+                    if not sel:
+                        return None
+                    park_code = sel.park_code
+                    pdf_url = discover_best_pdf_url(park_code)
+                    if not pdf_url:
+                        return None
+
                     return {
                         "success": True,
-                        "park_name": park.get("fullName", park_name),
-                        "map_url": map_url,
-                        "source": f"NPS {park.get('fullName', '')}",
+                        "park_name": sel.full_name or park_name,
+                        "map_url": pdf_url,
+                        "source": f"NPS {sel.full_name or ''}",
                         "map_type": "park_map",
                         "park_code": park_code,
-                        "fetched_at": datetime.utcnow().isoformat()
+                        "fetched_at": datetime.utcnow().isoformat(),
+                        "method": "discovery",
                     }
         except Exception as e:
             logger.error(f"[OfficialMapService] API error: {e}")
@@ -504,5 +746,4 @@ class OfficialMapService:
         return list(NPS_MAP_DATABASE.keys())
 
 
-# Singleton instance
-official_map_service = OfficialMapService()
+# NOTE: no module-level singleton instance. Instantiate `OfficialMapService()` per request.

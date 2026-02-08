@@ -12,7 +12,7 @@ import {
   checkFavorite,
   createHike,
 } from '@/lib/api';
-import { offlineMapManager } from '@/lib/offlineMapService';
+import { downloadOfflineMapPdf } from '@/lib/offlineMap/downloadOfflineMapPdf';
 import { useAuth } from '@/contexts/AuthContext';
 import { TrailCard } from '@/components/trails/TrailCard';
 import { TrailFilters, TrailFilterState } from '@/components/trails/TrailFilters';
@@ -119,8 +119,11 @@ export default function NationalParkPage() {
   const [startingHike, setStartingHike] = useState(false);
   const [hikeStartError, setHikeStartError] = useState<string | null>(null);
   
-  // Offline Map State
+  // Offline PDF Map Pack State (per park)
   const [offlineMapStatus, setOfflineMapStatus] = useState<OfflineMapStatus>('not_downloaded');
+  const [offlineMessage, setOfflineMessage] = useState<string | null>(null);
+  const [offlinePdfUnavailable, setOfflinePdfUnavailable] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   
   // UI State
   const [expandedIntel, setExpandedIntel] = useState<string | null>(null);
@@ -189,10 +192,20 @@ export default function NationalParkPage() {
     }
   };
 
-  // Check offline map status on mount
+  // Disable PDF download if we previously learned there is no official PDF for this park
   useEffect(() => {
-    const cached = localStorage.getItem(`offline_map_${placeId}`);
-    if (cached) setOfflineMapStatus('ready');
+    try {
+      const noPdf = localStorage.getItem(`offline_pdf_unavailable_${placeId}`) === 'true';
+      if (noPdf) {
+        setOfflineMapStatus('failed');
+        setOfflinePdfUnavailable(true);
+        setOfflineMessage(
+          'Offline map not available for this park'
+        );
+      }
+    } catch {
+      // ignore
+    }
   }, [placeId]);
 
   // ============================================
@@ -248,13 +261,28 @@ export default function NationalParkPage() {
     
     try {
       console.log('[ParkPage] Starting hike with trail:', selectedTrail.id, 'placeId:', placeId);
+
+      // Capture coordinates explicitly at click-time (required for correct map initialization)
+      const trailLat = selectedTrail.lat;
+      const trailLng = selectedTrail.lng;
+      if (typeof trailLat !== 'number' || typeof trailLng !== 'number') {
+        setHikeStartError('Unable to load trail location. Please try again.');
+        return;
+      }
       
       const response = await createHike(selectedTrail.id, placeId);
       const hikeId = response.data?.hike?.id || response.data?.id || response.data?.hike_id;
       
       if (hikeId) {
         // Navigate to the new Hike Mode live page
-        router.push(`/hikes/${hikeId}/live`);
+        const qs = new URLSearchParams({
+          trailId: selectedTrail.id,
+          placeId,
+          trailName: selectedTrail.name,
+          lat: String(trailLat),
+          lng: String(trailLng),
+        });
+        router.push(`/hikes/${hikeId}/live?${qs.toString()}`);
       } else {
         throw new Error('No hike ID in response');
       }
@@ -270,24 +298,48 @@ export default function NationalParkPage() {
   // OFFLINE MAP HANDLER
   // ============================================
 
-  const handleDownloadOffline = async () => {
-    if (!selectedTrail) return;
-    
+  const handleDownloadOfflineFromParkPage = async (source: 'park_page' | 'trail_modal' = 'park_page') => {
+    if (!placeId) return;
+    setOfflineMessage(null);
+
     try {
       setOfflineMapStatus('downloading');
-      await offlineMapManager.downloadPack(placeId, {
-        trailId: selectedTrail.id,
-        includePdf: true,
-        onProgress: (progress) => {
-          console.log('[ParkPage] Offline pack progress:', progress);
-        },
+      const result = await downloadOfflineMapPdf({
+        placeId,
+        parkName: place?.name,
+        source,
       });
-      setOfflineMapStatus('ready');
-      localStorage.setItem(`offline_map_${placeId}`, 'true');
-    } catch (error) {
-      console.error('[ParkPage] Offline download failed:', error);
+
+      if (result.ok) {
+        setOfflineMapStatus('ready');
+        setToastMessage('Downloaded offline map');
+        setTimeout(() => setToastMessage(null), 2500);
+        return;
+      }
+
+      // New backend contract: 200 JSON {available:false} maps to a user-friendly reason
+      if (!result.ok && result.reason.toLowerCase().includes('offline map not available')) {
+        setOfflineMapStatus('failed');
+        setOfflineMessage('Offline map not available for this park');
+        setOfflinePdfUnavailable(true);
+        try {
+          localStorage.setItem(`offline_pdf_unavailable_${placeId}`, 'true');
+        } catch {}
+        return;
+      }
+
       setOfflineMapStatus('failed');
+      setToastMessage(result.reason);
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (e: any) {
+      setOfflineMapStatus('failed');
+      setToastMessage(e?.message || 'Download failed');
+      setTimeout(() => setToastMessage(null), 3000);
     }
+  };
+
+  const handleDownloadOfflineFromTrailModal = async () => {
+    return handleDownloadOfflineFromParkPage('trail_modal');
   };
 
   // ============================================
@@ -398,6 +450,29 @@ export default function NationalParkPage() {
                 {trails.reduce((sum, t) => sum + (t.distance || 0), 0).toFixed(1)}
               </span>
             </div>
+            {offlineMapStatus === 'ready' && (
+              <div className="ml-auto">
+                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Offline map downloaded
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Offline PDF download section */}
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => handleDownloadOfflineFromParkPage('park_page')}
+              disabled={offlineMapStatus === 'downloading' || offlinePdfUnavailable}
+              className="px-4 py-2 rounded-xl text-sm font-medium text-white transition-colors disabled:opacity-50"
+              style={{ backgroundColor: '#4F8A6B' }}
+            >
+              {offlineMapStatus === 'downloading' ? 'Downloading…' : '📥 Download Offline Map (PDF)'}
+            </button>
+
+            {offlineMessage ? (
+              <div className="text-xs text-slate-600">{offlineMessage}</div>
+            ) : null}
           </div>
         </div>
       </header>
@@ -590,9 +665,11 @@ export default function NationalParkPage() {
         weather={weather}
         onClose={handleCloseTrailSheet}
         onStartHike={handleStartHike}
-        onDownloadOffline={handleDownloadOffline}
+        onDownloadOffline={handleDownloadOfflineFromTrailModal}
         loading={startingHike}
-        offlineEnabled={true}
+        offlineEnabled={!offlinePdfUnavailable}
+        offlineDownloadLoading={offlineMapStatus === 'downloading'}
+        offlineDisabledReason={offlinePdfUnavailable ? 'No official PDF available' : undefined}
       />
 
       {/* Hike Start Error Toast */}
@@ -607,6 +684,15 @@ export default function NationalParkPage() {
             >
               ✕
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Download toast */}
+      {toastMessage && (
+        <div className="fixed bottom-4 left-4 right-4 z-50 max-w-md mx-auto">
+          <div className="bg-slate-900 text-white rounded-xl px-4 py-3 shadow-lg text-sm">
+            {toastMessage}
           </div>
         </div>
       )}

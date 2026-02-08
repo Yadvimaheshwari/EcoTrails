@@ -44,6 +44,7 @@ class Place(Base):
     
     # Relationships
     trails = relationship("Trail", back_populates="place", cascade="all, delete-orphan")
+    offline_map_assets = relationship("OfflineMapAsset", back_populates="place", cascade="all, delete-orphan")
 
 
 class Trail(Base):
@@ -67,6 +68,53 @@ class Trail(Base):
     segments = relationship("TrailSegment", back_populates="trail", cascade="all, delete-orphan")
     hikes = relationship("Hike", back_populates="trail", cascade="all, delete-orphan")
     checkpoints = relationship("TrailCheckpoint", back_populates="trail", cascade="all, delete-orphan")
+
+
+class OfflineMapAsset(Base):
+    """
+    Offline map asset (official printable PDF/JPG) persisted per park/place.
+
+    The backend downloads and stores the file; the web client may additionally
+    cache the file in IndexedDB for true offline viewing.
+    """
+    __tablename__ = "offline_map_assets"
+
+    id = Column(String, primary_key=True, index=True)
+    park_id = Column(String, ForeignKey("places.id"), nullable=False, index=True)
+
+    title = Column(String, nullable=False, default="Official map")
+    source_url = Column(String, nullable=False)
+    file_type = Column(String, nullable=False)  # 'pdf' | 'jpg' | 'png'
+
+    local_path = Column(String, nullable=True)  # absolute or relative path on disk
+    bytes = Column(BigInteger, nullable=True)
+    checksum = Column(String, nullable=True)  # sha256
+
+    status = Column(String, nullable=False, default="not_downloaded")  # queued|downloading|downloaded|failed|not_downloaded
+    error = Column(Text, nullable=True)
+    downloaded_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    place = relationship("Place", back_populates="offline_map_assets")
+
+
+class OfficialMapCache(Base):
+    """
+    Cache for discovered official map PDF URLs, keyed strictly by parkCode.
+    Key format: 'official_maps:{parkCode}'
+    """
+    __tablename__ = "official_map_cache"
+
+    key = Column(String, primary_key=True, index=True)  # official_maps:{parkCode}
+    park_code = Column(String, nullable=False, index=True)
+    full_name = Column(String, nullable=True)
+    pdf_url = Column(String, nullable=True)
+
+    fetched_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class TrailSegment(Base):

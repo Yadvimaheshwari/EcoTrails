@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Navigation, Maximize2, Layers, AlertCircle, CheckCircle, Download, ExternalLink } from 'lucide-react';
 import { TrailPreviewCard } from './TrailPreviewCard';
+import { LeafletOfflineMap } from '@/components/LeafletOfflineMap';
 import {
   extractTrailCoordinates,
   getDifficultyColor,
@@ -13,6 +14,7 @@ import {
 } from '@/lib/mapUtils';
 import { FrontendTrail } from '@/lib/trailTransform';
 import { GOOGLE_MAPS_KEY, hasGoogleMapsKey, isDevelopment } from '@/config/env';
+import { loadGoogleMaps } from '@/lib/googleMapsLoader';
 
 interface TrailMapProps {
   park: {
@@ -30,24 +32,6 @@ interface TrailMapProps {
   onStartHike: (trail: FrontendTrail) => void;
   /** Hide the floating preview card (used when trail preview is shown inline) */
   hidePreviewCard?: boolean;
-}
-
-// Load Google Maps script
-function loadGoogleMapsScript(apiKey: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (typeof window.google !== 'undefined' && window.google.maps) {
-      resolve();
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=geometry`;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Failed to load Google Maps'));
-    document.head.appendChild(script);
-  });
 }
 
 export function TrailMap({
@@ -69,6 +53,12 @@ export function TrailMap({
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapType, setMapType] = useState<'roadmap' | 'satellite' | 'terrain'>('terrain');
   const [showPreview, setShowPreview] = useState(false);
+  const hasKey = hasGoogleMapsKey();
+
+  // Show preview when selected trail changes (works for both Google and Leaflet fallback)
+  useEffect(() => {
+    if (selectedTrail) setShowPreview(true);
+  }, [selectedTrail]);
 
   // Initialize Google Maps
   useEffect(() => {
@@ -77,12 +67,11 @@ export function TrailMap({
       console.log('[TrailMap] Key present:', hasGoogleMapsKey());
     }
     
-    if (!hasGoogleMapsKey()) {
-      setMapError('Google Maps API key not configured');
+    if (!hasKey) {
       return;
     }
 
-    loadGoogleMapsScript(GOOGLE_MAPS_KEY)
+    loadGoogleMaps(GOOGLE_MAPS_KEY, ['geometry'])
       .then(() => {
         if (isDevelopment) {
           console.log('✅ Google Maps SDK loaded successfully');
@@ -152,7 +141,7 @@ export function TrailMap({
         console.error('[TrailMap] Error loading Google Maps:', err);
         setMapError('Failed to load map');
       });
-  }, [park.location, park.name]);
+  }, [park.location, park.name, hasKey]);
 
   // Update map type when changed
   useEffect(() => {
@@ -371,6 +360,75 @@ export function TrailMap({
     }
   };
 
+  if (!hasKey) {
+    const center = park.location && typeof park.location === 'object'
+      ? { lat: park.location.lat, lng: park.location.lng }
+      : { lat: 37.7749, lng: -122.4194 };
+
+    const leafletPolylines = trails
+      .map((trail) => {
+        const coordinates = extractTrailCoordinates(trail);
+        if (!coordinates || !areCoordinatesValid(coordinates)) return null;
+        return {
+          points: coordinates,
+          color: getDifficultyColor(trail.difficulty),
+          weight: selectedTrail?.id === trail.id ? 6 : hoveredTrailId === trail.id ? 5 : 3,
+          opacity: selectedTrail?.id === trail.id ? 1 : hoveredTrailId === trail.id ? 0.85 : 0.6,
+        };
+      })
+      .filter(Boolean) as Array<{ points: LatLng[]; color: string; weight: number; opacity: number }>;
+
+    const allCoords = leafletPolylines.flatMap((l) => l.points);
+    const bounds = allCoords.length ? getBoundsFromCoordinates(allCoords) : null;
+
+    return (
+      <div className="relative w-full h-full rounded-xl overflow-hidden">
+        <div className="absolute top-4 left-4 right-4 z-30">
+          <div className="bg-white/95 backdrop-blur-sm border border-slate-200 rounded-xl shadow-lg px-4 py-3 flex items-center justify-between gap-3">
+            <div className="text-sm text-slate-700">
+              <span className="font-semibold">Maps running in fallback mode.</span>{' '}
+              Set <code className="px-1.5 py-0.5 bg-slate-100 rounded text-xs">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code> in{' '}
+              <code className="px-1.5 py-0.5 bg-slate-100 rounded text-xs">apps/web/.env.local</code> for interactive Google Maps.
+            </div>
+            <button
+              onClick={handleOpenInGoogleMaps}
+              className="shrink-0 inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+            >
+              <ExternalLink className="w-4 h-4" />
+              Open in Google Maps
+            </button>
+          </div>
+        </div>
+
+        <LeafletOfflineMap
+          center={center}
+          zoom={12}
+          polylines={leafletPolylines}
+          boundingBox={bounds || undefined}
+          height="100%"
+          interactive={true}
+          className="w-full h-full"
+        />
+
+        {/* Trail Preview Card - Only show if not hidden by parent */}
+        {!hidePreviewCard && showPreview && selectedTrail && (
+          <TrailPreviewCard
+            trail={selectedTrail}
+            hasGeometry={!!extractTrailCoordinates(selectedTrail)}
+            onClose={() => {
+              setShowPreview(false);
+              onTrailDeselect();
+            }}
+            onViewDetails={() => {
+              // TrailDetailPanel is handled by parent
+            }}
+            onStartHike={() => onStartHike(selectedTrail)}
+          />
+        )}
+      </div>
+    );
+  }
+
   if (mapError) {
     return (
       <div className="w-full h-full bg-slate-100 rounded-xl flex items-center justify-center p-6">
@@ -382,9 +440,7 @@ export function TrailMap({
             Map Unavailable
           </h3>
           <p className="text-slate-600 mb-4">
-            {mapError === 'Google Maps API key not configured' 
-              ? 'Interactive map requires configuration.' 
-              : mapError}
+            {mapError}
           </p>
           
           {/* Open in Google Maps fallback */}

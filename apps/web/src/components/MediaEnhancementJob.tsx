@@ -25,6 +25,8 @@ export function MediaEnhancementJob({ media, onEnhanced }: MediaEnhancementJobPr
   const [job, setJob] = useState<EnhancementJob | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [style, setStyle] = useState<'natural' | 'cinematic' | 'vintage' | 'modern'>('natural');
+  const [lighting, setLighting] = useState<'natural' | 'golden_hour' | 'dramatic'>('natural');
 
   // Only show for photos
   if (media.type !== 'photo') {
@@ -81,8 +83,8 @@ export function MediaEnhancementJob({ media, onEnhanced }: MediaEnhancementJobPr
 
     try {
       const response = await startMediaEnhancement(media.id, {
-        lighting: 'natural',
-        style: 'natural',
+        lighting,
+        style,
         enhance_subject: true,
         remove_shadows: false,
         background_replacement: false,
@@ -139,14 +141,41 @@ export function MediaEnhancementJob({ media, onEnhanced }: MediaEnhancementJobPr
 
       {/* Start Button */}
       {optIn && !job && !hasEnhanced && (
-        <button
-          onClick={handleStartEnhancement}
-          disabled={isStarting}
-          className="px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-colors disabled:opacity-50"
-          style={{ backgroundColor: '#4F8A6B' }}
-        >
-          {isStarting ? 'Starting...' : '✨ Start Enhancement'}
-        </button>
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              value={style}
+              onChange={(e) => setStyle(e.target.value as any)}
+              className="px-2 py-1.5 rounded-lg text-xs"
+              style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3', color: '#5F6F6A' }}
+              aria-label="Enhancement style"
+            >
+              <option value="natural">Natural</option>
+              <option value="cinematic">Cinematic</option>
+              <option value="vintage">Vintage</option>
+              <option value="modern">Modern</option>
+            </select>
+            <select
+              value={lighting}
+              onChange={(e) => setLighting(e.target.value as any)}
+              className="px-2 py-1.5 rounded-lg text-xs"
+              style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3', color: '#5F6F6A' }}
+              aria-label="Lighting preset"
+            >
+              <option value="natural">Natural light</option>
+              <option value="golden_hour">Golden hour</option>
+              <option value="dramatic">Dramatic</option>
+            </select>
+          </div>
+          <button
+            onClick={handleStartEnhancement}
+            disabled={isStarting}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-colors disabled:opacity-50"
+            style={{ backgroundColor: '#4F8A6B' }}
+          >
+            {isStarting ? 'Starting...' : '✨ Start Enhancement'}
+          </button>
+        </div>
       )}
 
       {/* Job Status */}

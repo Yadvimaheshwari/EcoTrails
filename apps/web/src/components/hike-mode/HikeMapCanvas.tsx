@@ -10,6 +10,7 @@ import { DiscoveryNodeWithStatus, DiscoveryCapture, DISCOVERY_CATEGORIES, RARITY
 
 interface HikeMapCanvasProps {
   trailCenter: { lat: number; lng: number }; // Center on trail, not user
+  trailBounds?: { north: number; south: number; east: number; west: number } | null;
   currentLocation: { lat: number; lng: number } | null;
   routePoints: Array<{ lat: number; lng: number; timestamp: number }>;
   discoveryNodes: DiscoveryNodeWithStatus[];
@@ -21,6 +22,7 @@ interface HikeMapCanvasProps {
 
 export function HikeMapCanvas({
   trailCenter,
+  trailBounds = null,
   currentLocation,
   routePoints,
   discoveryNodes,
@@ -56,12 +58,8 @@ export function HikeMapCanvas({
           document.head.appendChild(link);
         }
 
-        // Center on TRAIL location; if unavailable use current user location, then a reasonable US center
-        const center = trailCenter.lat !== 0 
-          ? trailCenter 
-          : currentLocation 
-            ? currentLocation 
-            : { lat: 40.0583, lng: -74.4057 }; // Default to NJ instead of CA
+        // Center on TRAIL location. Parent should only render when coords are valid.
+        const center = trailCenter;
         
         const map = L.map(mapRef.current!, {
           center: [center.lat, center.lng],
@@ -80,6 +78,21 @@ export function HikeMapCanvas({
           attribution: '© OpenStreetMap contributors',
           maxZoom: 18,
         }).addTo(map);
+
+        // If bounds are available, fit to the trail bounds for the first view
+        if (trailBounds && typeof trailBounds.north === 'number') {
+          try {
+            map.fitBounds(
+              [
+                [trailBounds.south, trailBounds.west],
+                [trailBounds.north, trailBounds.east],
+              ],
+              { padding: [30, 30] }
+            );
+          } catch (e) {
+            // If bounds are malformed, just keep centered
+          }
+        }
 
         // Add trail marker at center
         const trailIcon = L.divIcon({
@@ -120,7 +133,7 @@ export function HikeMapCanvas({
         mapInstance.remove();
       }
     };
-  }, [trailCenter]);
+  }, [trailCenter, trailBounds]);
 
   // Update tile layer when mapLayer changes
   useEffect(() => {

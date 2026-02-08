@@ -476,7 +476,18 @@ async def get_trail_details(trail_id: str, db: Session) -> Optional[Dict[str, An
         trail = db.query(Trail).filter(Trail.id == trail_id).first()
         if not trail:
             return None
-        
+        meta = trail.meta_data or {}
+        # Derive best-available coordinates for this trail (trailhead preferred).
+        lat = meta.get("trailhead_lat") or meta.get("lat") or meta.get("latitude")
+        lng = meta.get("trailhead_lng") or meta.get("lng") or meta.get("longitude")
+
+        # Fallback to place location if needed (still better than a hard-coded city).
+        if (lat is None or lng is None) and trail.place_id:
+            place = db.query(Place).filter(Place.id == trail.place_id).first()
+            if place and isinstance(place.location, dict):
+                lat = lat or place.location.get("lat") or place.location.get("latitude")
+                lng = lng or place.location.get("lng") or place.location.get("longitude")
+
         return {
             "id": trail.id,
             "place_id": trail.place_id,
@@ -486,7 +497,10 @@ async def get_trail_details(trail_id: str, db: Session) -> Optional[Dict[str, An
             "elevation_gain_feet": trail.elevation_gain_feet,
             "estimated_duration_minutes": trail.estimated_duration_minutes,
             "description": trail.description,
-            "metadata": trail.meta_data
+            "metadata": trail.meta_data,
+            "lat": lat,
+            "lng": lng,
+            "bounding_box": meta.get("bounding_box") or meta.get("bounds") or meta.get("bbox"),
         }
     except Exception as e:
         logger.error(f"Error getting trail details: {e}")

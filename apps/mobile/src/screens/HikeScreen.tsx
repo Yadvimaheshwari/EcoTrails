@@ -10,7 +10,14 @@ export const HikeScreen: React.FC = ({ navigation }: any) => {
   const { currentHike } = useHikeStore();
 
   if (currentHike.status === 'active' || currentHike.status === 'paused') {
-    navigation.navigate('DuringHike');
+    navigation.navigate('DuringHike', {
+      trailId: currentHike.trailId,
+      trailName: currentHike.name,
+      placeId: currentHike.placeId,
+      trailLat: currentHike.trailLocation?.lat,
+      trailLng: currentHike.trailLocation?.lng,
+      trailBounds: currentHike.trailBounds,
+    });
     return null;
   }
 

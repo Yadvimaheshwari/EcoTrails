@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { dbService } from '../services/offlineQueue';
 
 interface RoutePoint {
@@ -22,12 +24,20 @@ interface HikeState {
     trailId: string | null;
     placeId: string;
     name: string | null;
-    startTime: Date | null;
+    trailLocation?: { lat: number; lng: number } | null;
+    trailBounds?: { north: number; south: number; east: number; west: number } | null;
+    startTimeMs: number | null;
     status: 'idle' | 'active' | 'paused' | 'completed';
     routePoints: RoutePoint[];
     sensorBatches: SensorData[][];
   };
-  startHike: (trailId: string | null, placeId: string, name?: string) => Promise<void>;
+  startHike: (
+    trailId: string | null,
+    placeId: string,
+    name?: string,
+    trailLocation?: { lat: number; lng: number } | null,
+    trailBounds?: { north: number; south: number; east: number; west: number } | null
+  ) => Promise<void>;
   addRoutePoint: (point: RoutePoint) => void;
   addSensorBatch: (sensors: SensorData[]) => void;
   pauseHike: () => void;
@@ -36,125 +46,120 @@ interface HikeState {
   clearHike: () => void;
 }
 
-export const useHikeStore = create<HikeState>((set, get) => ({
-  currentHike: {
-    id: null,
-    trailId: null,
-    placeId: '',
-    name: null,
-    startTime: null,
-    status: 'idle',
-    routePoints: [],
-    sensorBatches: [],
-  },
-  
-  startHike: async (trailId, placeId, name) => {
-    const hikeId = `hike_${Date.now()}`;
-    const startTime = new Date();
-    
-    set({
-      currentHike: {
-        id: hikeId,
-        trailId,
-        placeId,
-        name: name || null,
-        startTime,
-        status: 'active',
-        routePoints: [],
-        sensorBatches: [],
-      },
-    });
-    
-    // Save to offline queue
-    await dbService.addHikeToQueue({
-      hikeId,
-      trailId,
-      placeId,
-      name,
-      startTime: startTime.toISOString(),
-      status: 'active',
-    });
-  },
-  
-  addRoutePoint: (point) => {
-    const { currentHike } = get();
-    if (currentHike.status === 'active') {
-      const updated = {
-        ...currentHike,
-        routePoints: [...currentHike.routePoints, point],
-      };
-      set({ currentHike: updated });
-      
-      // Save to offline queue
-      dbService.addRoutePoint(currentHike.id!, point);
-    }
-  },
-  
-  addSensorBatch: (sensors) => {
-    const { currentHike } = get();
-    if (currentHike.status === 'active') {
-      const updated = {
-        ...currentHike,
-        sensorBatches: [...currentHike.sensorBatches, sensors],
-      };
-      set({ currentHike: updated });
-      
-      // Save to offline queue
-      dbService.addSensorBatch(currentHike.id!, sensors);
-    }
-  },
-  
-  pauseHike: () => {
-    const { currentHike } = get();
-    if (currentHike.status === 'active') {
-      set({
-        currentHike: {
-          ...currentHike,
-          status: 'paused',
-        },
-      });
-    }
-  },
-  
-  resumeHike: () => {
-    const { currentHike } = get();
-    if (currentHike.status === 'paused') {
-      set({
-        currentHike: {
-          ...currentHike,
-          status: 'active',
-        },
-      });
-    }
-  },
-  
-  endHike: async () => {
-    const { currentHike } = get();
-    if (currentHike.id) {
-      set({
-        currentHike: {
-          ...currentHike,
-          status: 'completed',
-        },
-      });
-      
-      // Mark for sync in offline queue
-      await dbService.markHikeForSync(currentHike.id);
-    }
-  },
-  
-  clearHike: () => {
-    set({
+export const useHikeStore = create<HikeState>()(
+  persist(
+    (set, get) => ({
       currentHike: {
         id: null,
         trailId: null,
         placeId: '',
         name: null,
-        startTime: null,
+        trailLocation: null,
+        trailBounds: null,
+        startTimeMs: null,
         status: 'idle',
         routePoints: [],
         sensorBatches: [],
       },
-    });
-  },
-}));
+
+      startHike: async (trailId, placeId, name, trailLocation, trailBounds) => {
+        const hikeId = `hike_${Date.now()}`;
+        const startTimeMs = Date.now();
+
+        set({
+          currentHike: {
+            id: hikeId,
+            trailId,
+            placeId,
+            name: name || null,
+            trailLocation: trailLocation || null,
+            trailBounds: trailBounds || null,
+            startTimeMs,
+            status: 'active',
+            routePoints: [],
+            sensorBatches: [],
+          },
+        });
+
+        await dbService.addHikeToQueue({
+          hikeId,
+          trailId,
+          placeId,
+          name: name || null,
+          startTime: new Date(startTimeMs).toISOString(),
+          status: 'active',
+        });
+      },
+
+      addRoutePoint: (point) => {
+        const { currentHike } = get();
+        if (currentHike.status === 'active') {
+          const updated = {
+            ...currentHike,
+            routePoints: [...currentHike.routePoints, point],
+          };
+          set({ currentHike: updated });
+          dbService.addRoutePoint(currentHike.id!, point);
+        }
+      },
+
+      addSensorBatch: (sensors) => {
+        const { currentHike } = get();
+        if (currentHike.status === 'active') {
+          const updated = {
+            ...currentHike,
+            sensorBatches: [...currentHike.sensorBatches, sensors],
+          };
+          set({ currentHike: updated });
+          dbService.addSensorBatch(currentHike.id!, sensors);
+        }
+      },
+
+      pauseHike: () => {
+        const { currentHike } = get();
+        if (currentHike.status === 'active') {
+          set({ currentHike: { ...currentHike, status: 'paused' } });
+        }
+      },
+
+      resumeHike: () => {
+        const { currentHike } = get();
+        if (currentHike.status === 'paused') {
+          set({ currentHike: { ...currentHike, status: 'active' } });
+        }
+      },
+
+      endHike: async () => {
+        const { currentHike } = get();
+        if (currentHike.id) {
+          set({ currentHike: { ...currentHike, status: 'completed' } });
+          await dbService.markHikeForSync(currentHike.id);
+        }
+      },
+
+      clearHike: () => {
+        set({
+          currentHike: {
+            id: null,
+            trailId: null,
+            placeId: '',
+            name: null,
+            trailLocation: null,
+            trailBounds: null,
+            startTimeMs: null,
+            status: 'idle',
+            routePoints: [],
+            sensorBatches: [],
+          },
+        });
+      },
+    }),
+    {
+      name: 'hike_store_v1',
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({
+        currentHike: state.currentHike,
+      }),
+    }
+  )
+);

@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius, shadows } from '@ecotrails/shared/design';
+import { colors, spacing, borderRadius, shadows } from '../../shared/design';
 import { Text } from './Text';
 
 interface MapOverlayProps {
@@ -51,21 +51,21 @@ const styles = StyleSheet.create({
     ...shadows.lg,
   },
   content: {
-    padding: spacing[6],
+    padding: spacing['2xl'],
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: spacing[4],
+    marginBottom: spacing.lg,
   },
   headerContent: {
     flex: 1,
   },
   closeButton: {
-    padding: spacing[2],
+    padding: spacing.sm,
   },
   body: {
-    marginTop: spacing[2],
+    marginTop: spacing.sm,
   },
 });

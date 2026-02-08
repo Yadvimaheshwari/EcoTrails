@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing } from '@ecotrails/shared/design';
+import { colors, spacing } from '../../shared/design';
 import { Text } from './Text';
 
 interface EmptyStateProps {
@@ -31,11 +31,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: spacing[8],
+    padding: spacing['4xl'],
   },
   title: {
-    marginTop: spacing[6],
-    marginBottom: spacing[2],
+    marginTop: spacing['2xl'],
+    marginBottom: spacing.sm,
   },
   message: {
     textAlign: 'center',

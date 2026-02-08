@@ -1,8 +1,9 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { mockTripPlans } from '@/lib/journal/mockData';
+import { useEffect, useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { getJournalEntries, updateJournalEntry } from '@/lib/api';
 import { TripPlan, ChecklistItem } from '@/lib/journal/types';
 import { 
   Calendar, MapPin, CheckCircle2, Circle, Clock, Info, 
@@ -14,14 +15,122 @@ export default function TripPlanDetailPage() {
   const params = useParams();
   const router = useRouter();
   const planId = params.planId as string;
-  
-  const plan = mockTripPlans.find(p => p.id === planId);
+
+  const { user, token, isLoading: authLoading } = useAuth();
+
+  const [plan, setPlan] = useState<TripPlan | null>(null);
+  const [planMetadata, setPlanMetadata] = useState<any | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isSavingChecklist, setIsSavingChecklist] = useState(false);
   
   const [activeTab, setActiveTab] = useState<'overview' | 'trails' | 'prep' | 'logistics' | 'wildlife'>('overview');
-  const [checklist, setChecklist] = useState(plan?.checklist || []);
+  const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [showGeminiTools, setShowGeminiTools] = useState(false);
   const [toolLoading, setToolLoading] = useState<string | null>(null);
   const [toolResult, setToolResult] = useState<{ type: string; content: string[] } | null>(null);
+
+  // Load trip plan from real journal entries (trip_plan type)
+  useEffect(() => {
+    const load = async () => {
+      if (authLoading) return;
+      if (!user || !token) {
+        router.push('/login');
+        return;
+      }
+
+      setIsLoading(true);
+      setLoadError(null);
+
+      try {
+        const res = await getJournalEntries(undefined, 'trip_plan', 200);
+        const entries = (res.data?.entries || []) as any[];
+        const entry = entries.find((e) => e?.id === planId);
+
+        if (!entry) {
+          setPlan(null);
+          setChecklist([]);
+          setLoadError('Trip plan not found');
+          return;
+        }
+
+        const meta = entry.meta_data || entry.metadata || {};
+        setPlanMetadata(meta);
+        const tp = meta.trip_plan_data || {};
+        const planData = tp.plan || {};
+
+        // Flatten checklist categories -> ChecklistItem[]
+        const checklistByCat = planData.checklist || {};
+        const completedItems: string[] = Array.isArray(meta.completed_checklist_items)
+          ? meta.completed_checklist_items
+          : [];
+
+        const categoryMap: Record<string, ChecklistItem['category']> = {
+          documentation: 'permits',
+          accommodation: 'logistics',
+          transportation: 'logistics',
+          equipment: 'gear',
+          health_safety: 'safety',
+          communication: 'safety',
+          food_water: 'food',
+          personal: 'other',
+          permits: 'permits',
+          gear: 'gear',
+          logistics: 'logistics',
+          safety: 'safety',
+          food: 'food',
+          other: 'other',
+        };
+
+        const items: ChecklistItem[] = Object.entries(checklistByCat).flatMap(
+          ([categoryKey, list]: [string, any]) => {
+            const arr: string[] = Array.isArray(list) ? list : [];
+            const mappedCategory = categoryMap[categoryKey] || 'other';
+            return arr.map((item: string, idx: number) => ({
+              id: `${categoryKey}-${idx}`,
+              category: mappedCategory,
+              item,
+              completed: completedItems.includes(item),
+              required: true,
+            }));
+          }
+        );
+
+        const visitDate = meta.visit_date || tp.visit_date || entry.created_at;
+        const placeName = meta.place_name || tp.place_name || 'Trip';
+
+        const parsedPlan: TripPlan = {
+          id: entry.id,
+          name: entry.title || `Trip Plan: ${placeName}`,
+          parkName: meta.place_name || tp.place_name || '',
+          parkId: meta.place_id || '',
+          startDate: visitDate,
+          endDate: visitDate,
+          plannedTrails: [],
+          checklist: items,
+          logistics: { transportation: 'not_set' as const },
+          permits: { status: 'not_started' as const, required: false },
+          offlineStatus: 'not_downloaded' as const,
+          notes: entry.content,
+          createdAt: entry.created_at,
+          updatedAt: entry.updated_at || entry.created_at,
+          weather: tp.place_data?.weather || undefined,
+          wildlife: undefined,
+          activities: undefined,
+        };
+
+        setPlan(parsedPlan);
+        setChecklist(items);
+      } catch (e: any) {
+        console.error('[TripPlanDetail] Failed to load trip plan:', e);
+        setLoadError(e?.response?.data?.detail || e?.message || 'Failed to load trip plan');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    load();
+  }, [authLoading, planId, router, token, user]);
 
   // Deterministic AI Tool handlers (no Gemini dependency)
   const handleGenerateChecklist = async () => {
@@ -82,11 +191,25 @@ export default function TripPlanDetailPage() {
     setToolResult({ type: 'fieldguide', content: fieldGuide });
   };
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50 flex items-center justify-center p-4">
+        <div className="text-center">
+          <div className="w-12 h-12 rounded-full bg-white/80 flex items-center justify-center mb-3 mx-auto animate-pulse">
+            <span className="text-2xl">📋</span>
+          </div>
+          <p className="text-slate-600">Loading trip plan…</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!plan) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50 flex items-center justify-center p-4">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-slate-800 mb-2">Trip plan not found</h1>
+          {loadError && <p className="text-sm text-slate-600 mb-3">{loadError}</p>}
           <button 
             onClick={() => router.push('/journal')}
             className="text-orange-600 hover:text-orange-700 font-medium"
@@ -98,12 +221,31 @@ export default function TripPlanDetailPage() {
     );
   }
 
+  const saveCompletedChecklist = async (updatedChecklist: ChecklistItem[]) => {
+    // Persist completion by item text (compatible with JournalHomeV2 rendering)
+    try {
+      setIsSavingChecklist(true);
+      const completed = updatedChecklist.filter((i) => i.completed).map((i) => i.item);
+      const nextMetadata = {
+        ...(planMetadata || {}),
+        completed_checklist_items: completed,
+      };
+      await updateJournalEntry(plan.id, { metadata: nextMetadata });
+    } catch (e) {
+      console.error('[TripPlanDetail] Failed to save checklist:', e);
+      // Non-blocking; UI remains updated locally
+    } finally {
+      setIsSavingChecklist(false);
+    }
+  };
+
   const toggleChecklistItem = (itemId: string) => {
-    setChecklist(prev =>
-      prev.map(item =>
-        item.id === itemId ? { ...item, completed: !item.completed } : item
-      )
-    );
+    setChecklist((prev) => {
+      const next = prev.map((item) => (item.id === itemId ? { ...item, completed: !item.completed } : item));
+      // Fire-and-forget persist
+      saveCompletedChecklist(next);
+      return next;
+    });
   };
 
   const completedCount = checklist.filter(item => item.completed).length;
@@ -157,6 +299,7 @@ export default function TripPlanDetailPage() {
             <div className="flex-1">
               <div className="flex items-center gap-2 text-sm text-slate-600 mb-1">
                 <span>Checklist: {completedCount}/{totalCount}</span>
+                {isSavingChecklist && <span className="text-slate-400">• Saving…</span>}
                 <span className="text-slate-400">•</span>
                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${permitStatusColors[plan.permits.status]}`}>
                   Permit: {plan.permits.status.replace('_', ' ')}

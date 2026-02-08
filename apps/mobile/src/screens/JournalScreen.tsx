@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
@@ -6,18 +6,24 @@ import { colors } from '../config/colors';
 import { Text } from '../components/ui/Text';
 import { Card } from '../components/ui/Card';
 import { EmptyState } from '../components/ui/EmptyState';
-import { IntelligentJournal } from '../components/IntelligentJournal';
-import { api } from '../config/api';
+import { Button } from '../components/ui/Button';
+import { api, getJournalEntries } from '../config/api';
 import { useAuthStore } from '../store/useAuthStore';
+import type { JournalEntry } from '../types/journal';
 
 export const JournalScreen: React.FC = ({ navigation }: any) => {
   const { user } = useAuthStore();
   const [hikes, setHikes] = useState<any[]>([]);
+  const [tripPlans, setTripPlans] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadHikes();
+    load();
   }, []);
+
+  const load = async () => {
+    await Promise.all([loadHikes(), loadTripPlans()]);
+  };
 
   const loadHikes = async () => {
     if (!user) {
@@ -42,10 +48,37 @@ export const JournalScreen: React.FC = ({ navigation }: any) => {
     }
   };
 
+  const loadTripPlans = async () => {
+    if (!user) {
+      setTripPlans([]);
+      return;
+    }
+    try {
+      const res = await getJournalEntries({ entryType: 'trip_plan', limit: 50 });
+      setTripPlans((res.data?.entries || []) as JournalEntry[]);
+    } catch (e) {
+      console.warn('[Journal] Could not load trip plans:', e);
+      setTripPlans([]);
+    }
+  };
+
   const handleHikePress = (hike: any) => {
     // Navigate to the comprehensive hike detail screen
     navigation.navigate('HikeDetail', { hikeId: hike.id });
   };
+
+  const nextTripCards = useMemo(() => {
+    return tripPlans
+      .map((entry) => {
+        const meta = (entry.meta_data || entry.metadata || {}) as any;
+        return {
+          id: entry.id,
+          placeName: meta.place_name || meta.placeName || entry.title || 'Trip Plan',
+          visitDate: meta.visit_date || meta.visitDate,
+        };
+      })
+      .slice(0, 3);
+  }, [tripPlans]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -60,6 +93,64 @@ export const JournalScreen: React.FC = ({ navigation }: any) => {
         data={hikes}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
+        ListHeaderComponent={
+          <View style={{ marginBottom: 16 }}>
+            <Card style={styles.tripCard}>
+              <Text variant="caption" color="secondary" style={{ letterSpacing: 0.8 }}>
+                NEXT UP
+              </Text>
+              <Text variant="h3" style={{ marginTop: 8 }}>
+                NextTrip
+              </Text>
+              <Text variant="caption" color="secondary" style={{ marginTop: 6 }}>
+                Plan your next trip and keep your checklist here.
+              </Text>
+              <Button
+                title="Plan your next trip"
+                onPress={() => navigation.navigate('TripPlanner')}
+                style={{ marginTop: 12 }}
+              />
+              {nextTripCards.length > 0 && (
+                <View style={{ marginTop: 14 }}>
+                  <Text variant="label" color="secondary" style={{ marginBottom: 8 }}>
+                    Upcoming
+                  </Text>
+                  {nextTripCards.map((t) => (
+                    <TouchableOpacity
+                      key={t.id}
+                      onPress={() => navigation.navigate('TripPlanDetail', { entryId: t.id })}
+                      activeOpacity={0.75}
+                    >
+                      <View style={styles.tripRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text variant="body" numberOfLines={1} style={{ fontWeight: '600' as any }}>
+                            {t.placeName}
+                          </Text>
+                          <Text variant="caption" color="secondary">
+                            {t.visitDate ? `Visit date: ${t.visitDate}` : 'Visit date: not set'}
+                          </Text>
+                        </View>
+                        <Text variant="caption" color="accent">
+                          Open →
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate('TripPlans')}
+                    style={{ marginTop: 10 }}
+                    activeOpacity={0.75}
+                  >
+                    <Text variant="caption" color="accent">
+                      View all trip plans
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </Card>
+          </View>
+        }
         renderItem={({ item, index }) => (
           <TouchableOpacity 
             onPress={() => handleHikePress(item)}
@@ -115,6 +206,17 @@ const styles = StyleSheet.create({
   },
   hikeCard: {
     marginBottom: 12,
+  },
+  tripCard: {
+    marginBottom: 12,
+  },
+  tripRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   date: {
     marginTop: 4,

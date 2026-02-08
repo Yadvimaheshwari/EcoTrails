@@ -1,0 +1,40 @@
+{
+  "parks": {
+    "yose": [
+      {
+        "title": "Yosemite National Park Map (NPS PDF)",
+        "url": "https://www.nps.gov/yose/planyourvisit/upload/YOSEmap1.pdf",
+        "fileType": "pdf"
+      }
+    ],
+    "acad": [
+      {
+        "title": "Acadia National Park Map (NPS PDF)",
+        "url": "https://www.nps.gov/acad/planyourvisit/upload/ACAD_Map.pdf",
+        "fileType": "pdf"
+      }
+    ],
+    "zion": [
+      {
+        "title": "Zion National Park Map (NPS PDF)",
+        "url": "https://www.nps.gov/zion/planyourvisit/upload/ZION_Map.pdf",
+        "fileType": "pdf"
+      }
+    ],
+    "yell": [
+      {
+        "title": "Yellowstone National Park Map (NPS PDF)",
+        "url": "https://www.nps.gov/yell/planyourvisit/upload/YELL_Map.pdf",
+        "fileType": "pdf"
+      }
+    ],
+    "grsm": [
+      {
+        "title": "Great Smoky Mountains National Park Map (NPS PDF)",
+        "url": "https://www.nps.gov/grsm/planyourvisit/upload/GRSM_Map.pdf",
+        "fileType": "pdf"
+      }
+    ]
+  }
+}
+

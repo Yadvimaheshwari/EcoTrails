@@ -19,11 +19,11 @@ export const MediaPickerScreen: React.FC = ({ navigation }: any) => {
   }, []);
 
   const loadDetectedMedia = async () => {
-    if (!currentHike.startTime) return;
+    if (!currentHike.startTimeMs) return;
 
     try {
       const endTime = new Date();
-      const media = await detectMediaDuringHike(currentHike.startTime, endTime);
+      const media = await detectMediaDuringHike(new Date(currentHike.startTimeMs), endTime);
       setDetectedMedia(media);
     } catch (error) {
       console.error('Failed to detect media:', error);

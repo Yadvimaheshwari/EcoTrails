@@ -95,9 +95,10 @@ export default function ExplorePage() {
   // Load active hike from API
   const loadActiveHike = async () => {
     try {
-      const response = await fetch('/api/v1/hikes/active', {
+      // Use axios client so Authorization is consistent (prevents 401s)
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/hikes/active`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
+          'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`,
         },
       });
       if (response.ok) {

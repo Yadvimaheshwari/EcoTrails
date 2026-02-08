@@ -10,6 +10,8 @@ import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { mockHikes, mockDiscoveries } from '@/lib/journal/mockData';
 import { generateHikeStory, organizePhotos, createTrailVideo, exportJournalEntry } from '@/lib/aiServices';
+import type { Media as MediaItem } from '@/types';
+import { MediaEnhancementJob } from '@/components/MediaEnhancementJob';
 import { 
   ChevronLeft, MapPin, Calendar, Clock, TrendingUp, Mountain, 
   Route, Camera, FileText, Sparkles, Image as ImageIcon, Map,
@@ -68,6 +70,7 @@ export default function HikeDetailPage() {
   const [reflection, setReflection] = useState('');
   const [showToolsDrawer, setShowToolsDrawer] = useState(false);
   const [activeSection, setActiveSection] = useState<'overview' | 'discoveries' | 'media' | 'reflection'>('overview');
+  const [mediaJobs3d, setMediaJobs3d] = useState<Record<string, { status: string; jobId?: string; modelUrl?: string; error?: string }>>({});
   
   // AI Tools state
   const [generatingStory, setGeneratingStory] = useState(false);
@@ -112,6 +115,14 @@ export default function HikeDetailPage() {
         highlights: hikeData.meta_data?.highlights || [],
         achievements: hikeData.meta_data?.earned_badges?.map((b: any) => b.type) || [],
       };
+
+      // Load media for this hike
+      try {
+        const mediaRes = await api.get(`/api/v1/hikes/${hikeId}/media`);
+        transformedHike.media = mediaRes.data?.media || [];
+      } catch (e) {
+        console.warn('[HikeDetail] Failed to load hike media:', e);
+      }
       
       setHike(transformedHike);
       setReflection(transformedHike.reflection || '');
@@ -175,6 +186,87 @@ export default function HikeDetailPage() {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const uploadMorePhotos = async (files: FileList | null) => {
+    if (!files || !files.length) return;
+    if (!hike) return;
+
+    try {
+      const uploads = Array.from(files).filter((f) => f.type.startsWith('image/'));
+      if (uploads.length === 0) return;
+
+      for (const file of uploads) {
+        const form = new FormData();
+        form.append('file', file);
+        form.append('type', 'photo');
+        // optional: form.append('category', 'journal');
+
+        const res = await api.post(`/api/v1/hikes/${hikeId}/media`, form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+
+        const created = res.data;
+        setHike((prev) => {
+          if (!prev) return prev;
+          return { ...prev, media: [...(prev.media || []), created] };
+        });
+      }
+    } catch (e) {
+      console.error('[HikeDetail] Upload failed:', e);
+      alert('Failed to upload photo(s). Please try again.');
+    }
+  };
+
+  const start3dForMedia = async (media: MediaItem) => {
+    try {
+      setMediaJobs3d((prev) => ({ ...prev, [media.id]: { status: 'starting' } }));
+      const res = await api.post(`/api/v1/media/${media.id}/3d`);
+      const jobId = res.data?.job_id;
+      const modelUrl = res.data?.model_url;
+      if (!jobId) throw new Error('No job_id returned');
+
+      setMediaJobs3d((prev) => ({ ...prev, [media.id]: { status: 'queued', jobId, modelUrl } }));
+
+      const poll = setInterval(async () => {
+        try {
+          const statusRes = await api.get(`/api/v1/3d-jobs/${jobId}`);
+          const status = statusRes.data?.status || 'unknown';
+          const model = statusRes.data?.model_url || modelUrl;
+          if (status === 'completed') {
+            clearInterval(poll);
+            setMediaJobs3d((prev) => ({ ...prev, [media.id]: { status, jobId, modelUrl: model } }));
+            // Update local media metadata so UI can show the download link
+            setHike((prev) => {
+              if (!prev) return prev;
+              const nextMedia = (prev.media || []).map((m: any) => {
+                if (m.id !== media.id) return m;
+                return {
+                  ...m,
+                  meta_data: {
+                    ...(m.meta_data || {}),
+                    model_3d_url: model,
+                    model_3d_job_id: jobId,
+                  },
+                };
+              });
+              return { ...prev, media: nextMedia };
+            });
+          } else if (status === 'failed') {
+            clearInterval(poll);
+            setMediaJobs3d((prev) => ({ ...prev, [media.id]: { status, jobId, modelUrl: model, error: statusRes.data?.error } }));
+          } else {
+            setMediaJobs3d((prev) => ({ ...prev, [media.id]: { status, jobId, modelUrl: model } }));
+          }
+        } catch (e) {
+          // ignore transient polling errors
+        }
+      }, 2000);
+    } catch (e: any) {
+      console.error('[HikeDetail] Failed to start 3D job:', e);
+      setMediaJobs3d((prev) => ({ ...prev, [media.id]: { status: 'failed', error: e?.response?.data?.detail || e?.message } }));
+      alert('Failed to start 3D generation.');
     }
   };
 
@@ -560,37 +652,122 @@ export default function HikeDetailPage() {
             {/* Media Section */}
             {activeSection === 'media' && (
               <div className="space-y-4">
-                {hike.media && hike.media.length > 0 ? (
-                  <>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      {hike.media.map((item: any) => (
-                        <div key={item.id} className="aspect-square bg-slate-100 rounded-lg overflow-hidden relative group">
-                          <div className="w-full h-full flex items-center justify-center text-slate-400">
-                            {item.type === 'photo' ? (
-                              <Camera className="w-8 h-8" />
-                            ) : (
-                              <Mic className="w-8 h-8" />
-                            )}
-                          </div>
-                          {item.caption && (
-                            <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white p-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity">
-                              {item.caption}
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                <div className="bg-white rounded-2xl p-6 shadow-sm">
+                  <div className="flex items-center justify-between gap-4 mb-4">
+                    <div>
+                      <h2 className="text-lg font-semibold text-slate-800">Media</h2>
+                      <p className="text-sm text-slate-600">Upload more photos, enhance with AI, or generate a 3D model.</p>
                     </div>
-                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
-                      <p className="font-medium mb-1">Media Gallery</p>
-                      <p>{hike.media.length} items • Click to view full size</p>
-                    </div>
-                  </>
-                ) : (
-                  <div className="bg-white rounded-2xl p-12 shadow-sm text-center">
-                    <ImageIcon className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                    <p className="text-slate-600">No media captured for this hike</p>
+                    <label className="px-4 py-2 rounded-xl text-sm font-medium text-white cursor-pointer" style={{ backgroundColor: '#4F8A6B' }}>
+                      Upload photos
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => uploadMorePhotos(e.target.files)}
+                      />
+                    </label>
                   </div>
-                )}
+
+                  {hike.media && hike.media.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {hike.media
+                        .filter((m: any) => m.type === 'photo')
+                        .map((item: MediaItem, idx: number) => {
+                          const enhancedUrl = (item.meta_data as any)?.enhanced_url;
+                          const model3dUrl = (item.meta_data as any)?.model_3d_url;
+                          const displayUrl = enhancedUrl || item.url;
+                          const absoluteUrl =
+                            displayUrl?.startsWith('http')
+                              ? displayUrl
+                              : `${process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}${displayUrl}`;
+
+                          const job3d = mediaJobs3d[item.id];
+
+                          return (
+                            <div key={item.id || idx} className="space-y-3">
+                              <div
+                                className="aspect-square rounded-xl overflow-hidden cursor-pointer hover:opacity-90 transition-opacity relative group"
+                                style={{ backgroundColor: '#E8E8E3' }}
+                                onClick={() => {
+                                  if (absoluteUrl) window.open(absoluteUrl, '_blank');
+                                }}
+                              >
+                                {absoluteUrl ? (
+                                  <img
+                                    src={absoluteUrl}
+                                    alt={`Photo ${idx + 1}`}
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).style.display = 'none';
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-4xl">📸</div>
+                                )}
+                                {enhancedUrl && (
+                                  <div className="absolute top-2 right-2 px-2 py-1 rounded text-xs font-medium text-white" style={{ backgroundColor: '#4C7EF3' }}>
+                                    ✨ Enhanced
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* AI Enhance */}
+                              <MediaEnhancementJob
+                                media={item}
+                                onEnhanced={(url) => {
+                                  // reflect enhanced url in UI
+                                  setHike((prev) => {
+                                    if (!prev) return prev;
+                                    const nextMedia = (prev.media || []).map((m: any) =>
+                                      m.id === item.id
+                                        ? { ...m, meta_data: { ...(m.meta_data || {}), enhanced_url: url } }
+                                        : m
+                                    );
+                                    return { ...prev, media: nextMedia };
+                                  });
+                                }}
+                              />
+
+                              {/* 3D */}
+                              <div className="flex items-center justify-between gap-2">
+                                <button
+                                  onClick={() => start3dForMedia(item)}
+                                  disabled={job3d?.status === 'starting' || job3d?.status === 'queued' || job3d?.status === 'processing'}
+                                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-50"
+                                  style={{ backgroundColor: '#8B6F47' }}
+                                >
+                                  {job3d?.status === 'processing' ? 'Creating 3D…' : '🧊 Create 3D model'}
+                                </button>
+                                {(model3dUrl || job3d?.modelUrl) && (
+                                  <a
+                                    href={(model3dUrl || job3d?.modelUrl) as string}
+                                    target="_blank"
+                                    className="text-xs underline"
+                                    style={{ color: '#5F6F6A' }}
+                                  >
+                                    Download OBJ
+                                  </a>
+                                )}
+                              </div>
+
+                              {job3d?.error && (
+                                <div className="text-xs" style={{ color: '#B45309' }}>
+                                  3D error: {job3d.error}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  ) : (
+                    <div className="py-10 text-center text-slate-600">
+                      <ImageIcon className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                      No photos yet. Upload some to enhance or generate a 3D model.
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

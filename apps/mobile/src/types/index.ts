@@ -5,3 +5,4 @@
 
 export * from './discovery';
 export * from './badge';
+export * from './journal';

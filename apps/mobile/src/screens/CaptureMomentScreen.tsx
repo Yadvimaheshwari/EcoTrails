@@ -2,7 +2,6 @@ import React, { useState, useRef } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { Audio } from 'expo-av';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../config/colors';
@@ -11,17 +10,33 @@ import { Button } from '../components/ui/Button';
 import { useHikeStore } from '../store/useHikeStore';
 import { dbService } from '../services/offlineQueue';
 
+function getExpoAudio(): any | null {
+  try {
+    // expo-audio (new) migration target. We intentionally avoid static imports so builds don't break
+    // until the dependency is installed via `npx expo install expo-audio`.
+    const mod = require('expo-audio');
+    return mod?.Audio || mod;
+  } catch {
+    return null;
+  }
+}
+
 export const CaptureMomentScreen: React.FC = ({ navigation }: any) => {
   const [permission, requestPermission] = useCameraPermissions();
   const [audioPermission, setAudioPermission] = useState(false);
   const [mode, setMode] = useState<'photo' | 'video' | 'audio'>('photo');
   const [recording, setRecording] = useState(false);
-  const [audioRecording, setAudioRecording] = useState<Audio.Recording | null>(null);
+  const [audioRecording, setAudioRecording] = useState<any | null>(null);
   const cameraRef = useRef<CameraView>(null);
   const { currentHike } = useHikeStore();
 
   React.useEffect(() => {
     (async () => {
+      const Audio = getExpoAudio();
+      if (!Audio?.requestPermissionsAsync) {
+        setAudioPermission(false);
+        return;
+      }
       const { status } = await Audio.requestPermissionsAsync();
       setAudioPermission(status === 'granted');
     })();
@@ -69,7 +84,6 @@ export const CaptureMomentScreen: React.FC = ({ navigation }: any) => {
       setRecording(true);
       const video = await cameraRef.current.recordAsync({
         maxDuration: 60,
-        quality: '720p',
       });
 
       if (video?.uri) {
@@ -105,6 +119,11 @@ export const CaptureMomentScreen: React.FC = ({ navigation }: any) => {
 
   const handleRecordAudio = async () => {
     try {
+      const Audio = getExpoAudio();
+      if (!Audio) {
+        Alert.alert('Audio unavailable', 'Audio recording module is not installed. Please update the app.');
+        return;
+      }
       if (!audioPermission) {
         const { status } = await Audio.requestPermissionsAsync();
         if (status !== 'granted') {
@@ -114,16 +133,20 @@ export const CaptureMomentScreen: React.FC = ({ navigation }: any) => {
         setAudioPermission(true);
       }
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
+      if (Audio.setAudioModeAsync) {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+        });
+      }
 
-      const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY,
-        undefined,
-        5000 // 5 seconds max
-      );
+      if (!Audio.Recording?.createAsync) {
+        Alert.alert('Audio unavailable', 'Audio recording is not supported in this build.');
+        return;
+      }
+
+      const preset = Audio.RecordingOptionsPresets?.HIGH_QUALITY;
+      const { recording: newRecording } = await Audio.Recording.createAsync(preset, undefined, 5000);
 
       setAudioRecording(newRecording);
 

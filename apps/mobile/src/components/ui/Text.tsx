@@ -1,13 +1,13 @@
 import React from 'react';
-import { Text as RNText, StyleSheet, TextStyle } from 'react-native';
-import { colors } from '@ecotrails/shared/design';
+import { Text as RNText, StyleProp, StyleSheet, TextStyle } from 'react-native';
+import { colors } from '../../shared/design';
 import { typography } from '../../config/typography';
 
 interface TextProps {
   children: React.ReactNode;
-  variant?: 'h1' | 'h2' | 'h3' | 'body' | 'caption' | 'label';
+  variant?: 'h1' | 'h2' | 'h3' | 'h4' | 'body' | 'caption' | 'label';
   color?: 'primary' | 'secondary' | 'tertiary' | 'accent';
-  style?: TextStyle;
+  style?: StyleProp<TextStyle>;
   numberOfLines?: number;
 }
 
@@ -18,12 +18,7 @@ export const Text: React.FC<TextProps> = ({
   style,
   numberOfLines,
 }) => {
-  const textStyle: TextStyle[] = [
-    styles.base,
-    styles[variant],
-    styles[`color_${color}`],
-    style,
-  ];
+  const textStyle: StyleProp<TextStyle> = [styles.base, styles[variant], styles[`color_${color}`], style];
 
   return (
     <RNText style={textStyle} numberOfLines={numberOfLines}>
@@ -50,6 +45,11 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize['2xl'],
     fontFamily: typography.fontFamily.semibold,
     lineHeight: typography.fontSize['2xl'] * typography.lineHeight.normal,
+  },
+  h4: {
+    fontSize: typography.fontSize.xl,
+    fontFamily: typography.fontFamily.semibold,
+    lineHeight: typography.fontSize.xl * typography.lineHeight.normal,
   },
   body: {
     fontSize: typography.fontSize.base,

@@ -12,6 +12,12 @@ interface LeafletOfflineMapProps {
   center: { lat: number; lng: number };
   zoom?: number;
   polyline?: Array<{ lat: number; lng: number }>;
+  polylines?: Array<{
+    points: Array<{ lat: number; lng: number }>;
+    color?: string;
+    weight?: number;
+    opacity?: number;
+  }>;
   pois?: Array<{ lat: number; lng: number; name: string; type: string }>;
   boundingBox?: { north: number; south: number; east: number; west: number };
   currentLocation?: { lat: number; lng: number } | null;
@@ -25,6 +31,7 @@ export function LeafletOfflineMap({
   center,
   zoom = 13,
   polyline,
+  polylines,
   pois,
   boundingBox,
   currentLocation,
@@ -122,18 +129,35 @@ export function LeafletOfflineMap({
           maxZoom: 18,
         }) as L.TileLayer).addTo(map);
 
-        // Add trail polyline
+        // Add trail polyline(s)
+        const allLatLngs: Array<[number, number]> = [];
+
         if (polyline && polyline.length > 0) {
           const latlngs = polyline.map((p) => [p.lat, p.lng] as [number, number]);
+          allLatLngs.push(...latlngs);
           L.polyline(latlngs, {
             color: '#4F8A6B',
             weight: 4,
             opacity: 0.8,
           }).addTo(map);
+        }
 
-          // Fit to polyline bounds
-          const polyBounds = L.latLngBounds(latlngs);
-          map.fitBounds(polyBounds, { padding: [30, 30] });
+        if (polylines && polylines.length > 0) {
+          polylines.forEach((line) => {
+            if (!line?.points?.length) return;
+            const latlngs = line.points.map((p) => [p.lat, p.lng] as [number, number]);
+            allLatLngs.push(...latlngs);
+            L.polyline(latlngs, {
+              color: line.color || '#4F8A6B',
+              weight: typeof line.weight === 'number' ? line.weight : 4,
+              opacity: typeof line.opacity === 'number' ? line.opacity : 0.8,
+            }).addTo(map);
+          });
+        }
+
+        if (allLatLngs.length > 0) {
+          const bounds = L.latLngBounds(allLatLngs);
+          map.fitBounds(bounds, { padding: [30, 30] });
         } else if (boundingBox) {
           // Fit to bounding box
           map.fitBounds([

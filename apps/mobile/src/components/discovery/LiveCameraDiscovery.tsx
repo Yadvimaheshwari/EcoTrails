@@ -28,7 +28,7 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
-import { Camera, CameraType } from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   useSharedValue,
@@ -66,8 +66,8 @@ export const LiveCameraDiscovery: React.FC<LiveCameraDiscoveryProps> = ({
   currentLocation,
   onDiscoveryMade,
 }) => {
-  const cameraRef = useRef<Camera>(null);
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const cameraRef = useRef<CameraView>(null);
+  const [permission, requestPermission] = useCameraPermissions();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<IdentificationResult | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
@@ -79,7 +79,9 @@ export const LiveCameraDiscovery: React.FC<LiveCameraDiscoveryProps> = ({
 
   useEffect(() => {
     if (visible) {
-      requestCameraPermission();
+      if (!permission?.granted) {
+        requestPermission();
+      }
     } else {
       // Reset state when modal closes
       setResult(null);
@@ -88,10 +90,7 @@ export const LiveCameraDiscovery: React.FC<LiveCameraDiscoveryProps> = ({
     }
   }, [visible]);
 
-  const requestCameraPermission = async () => {
-    const { status } = await Camera.requestCameraPermissionsAsync();
-    setHasPermission(status === 'granted');
-  };
+  const hasPermission = permission?.granted ?? null;
 
   const handleCapture = async () => {
     if (!cameraRef.current || isAnalyzing) return;
@@ -199,7 +198,7 @@ export const LiveCameraDiscovery: React.FC<LiveCameraDiscoveryProps> = ({
               <Text style={styles.permissionText}>
                 Please allow camera access to discover wildlife and nature on the trail.
               </Text>
-              <TouchableOpacity style={styles.permissionButton} onPress={requestCameraPermission}>
+              <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
                 <Text style={styles.permissionButtonText}>Grant Permission</Text>
               </TouchableOpacity>
             </View>
@@ -211,11 +210,10 @@ export const LiveCameraDiscovery: React.FC<LiveCameraDiscoveryProps> = ({
               entering={FadeIn.duration(200)}
             />
           ) : (
-            <Camera
+            <CameraView
               ref={cameraRef}
               style={styles.camera}
-              type={CameraType.back}
-              ratio="16:9"
+              facing="back"
             />
           )}
         </View>

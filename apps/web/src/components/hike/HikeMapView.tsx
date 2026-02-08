@@ -19,6 +19,8 @@ import {
   Minus,
 } from 'lucide-react';
 import { GOOGLE_MAPS_KEY, hasGoogleMapsKey, isDevelopment } from '@/config/env';
+import { LeafletOfflineMap } from '@/components/LeafletOfflineMap';
+import { loadGoogleMaps } from '@/lib/googleMapsLoader';
 
 interface HikeMapViewProps {
   trailName: string;
@@ -73,32 +75,18 @@ export function HikeMapView({
   const [mapType, setMapType] = useState<'terrain' | 'satellite' | 'roadmap'>('terrain');
   const [followUser, setFollowUser] = useState(true);
   const [userPath, setUserPath] = useState<Array<{ lat: number; lng: number }>>([]);
+  const hasKey = hasGoogleMapsKey();
 
   // Load Google Maps
   useEffect(() => {
-    if (!hasGoogleMapsKey()) {
-      setMapError('Map requires configuration');
+    if (!hasKey) {
+      // Fallback path: LeafletOfflineMap will render instead.
+      setMapError(null);
+      setMapLoaded(true);
       return;
     }
 
-    const loadScript = () => {
-      return new Promise<void>((resolve, reject) => {
-        if (typeof window.google !== 'undefined' && window.google.maps) {
-          resolve();
-          return;
-        }
-
-        const script = document.createElement('script');
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_KEY}&libraries=geometry`;
-        script.async = true;
-        script.defer = true;
-        script.onload = () => resolve();
-        script.onerror = () => reject(new Error('Failed to load Google Maps'));
-        document.head.appendChild(script);
-      });
-    };
-
-    loadScript()
+    loadGoogleMaps(GOOGLE_MAPS_KEY, ['geometry'])
       .then(() => {
         if (!mapRef.current || googleMapRef.current) return;
 
@@ -147,10 +135,11 @@ export function HikeMapView({
         console.error('[HikeMapView] Error loading map:', err);
         setMapError('Failed to load map');
       });
-  }, [parkLocation, onMapReady]);
+  }, [parkLocation, onMapReady, hasKey]);
 
   // Update map type
   useEffect(() => {
+    if (!hasKey) return;
     if (googleMapRef.current && mapLoaded) {
       googleMapRef.current.setMapTypeId(mapType);
     }
@@ -158,6 +147,7 @@ export function HikeMapView({
 
   // Update user marker and track path
   useEffect(() => {
+    if (!hasKey) return;
     if (!googleMapRef.current || !mapLoaded || !userLocation) return;
 
     // Update or create user marker
@@ -256,12 +246,32 @@ export function HikeMapView({
               <p className="text-sm text-slate-500">GPS tracking is still active</p>
             </div>
           </div>
+        ) : !hasKey ? (
+          <div className="w-full h-full">
+            <div className="absolute top-20 left-4 right-4 z-30">
+              <div className="bg-white/95 backdrop-blur-sm border border-slate-200 rounded-xl shadow-lg px-4 py-3 text-sm text-slate-700">
+                <span className="font-semibold">Maps running in fallback mode.</span>{' '}
+                Set <code className="px-1.5 py-0.5 bg-slate-100 rounded text-xs">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code> in{' '}
+                <code className="px-1.5 py-0.5 bg-slate-100 rounded text-xs">apps/web/.env.local</code> for Google Maps.
+              </div>
+            </div>
+            <LeafletOfflineMap
+              center={userLocation || parkLocation}
+              zoom={15}
+              polyline={routePoints}
+              currentLocation={userLocation}
+              showUserLocation={true}
+              height="100%"
+              interactive={true}
+              className="w-full h-full"
+            />
+          </div>
         ) : (
           <div ref={mapRef} className="w-full h-full" />
         )}
 
         {/* Loading Overlay */}
-        {!mapLoaded && !mapError && (
+        {!mapLoaded && !mapError && hasKey && (
           <div className="absolute inset-0 bg-slate-100 flex items-center justify-center">
             <div className="text-center">
               <div className="w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />

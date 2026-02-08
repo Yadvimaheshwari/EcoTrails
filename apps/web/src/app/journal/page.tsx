@@ -6,7 +6,7 @@ import { JournalShell } from '@/components/journal/JournalShell';
 import { JournalModeSwitch } from '@/components/journal/JournalModeSwitch';
 import { ActiveHikeBanner } from '@/components/journal/ActiveHikeBanner';
 import { useAuth } from '@/contexts/AuthContext';
-import { getJournalEntries, getHikes, getUserAchievements } from '@/lib/api';
+import { getJournalEntries, getHikes, getUserAchievements, planTrip, searchPlaces } from '@/lib/api';
 import { 
   mockTripPlans, 
   mockCompletedHikes, 
@@ -25,6 +25,14 @@ export default function JournalPage() {
   const { user, token } = useAuth();
   const [mode, setMode] = useState<JournalMode>('plan');
   const [isLoading, setIsLoading] = useState(true);
+  const [showPlanModal, setShowPlanModal] = useState(false);
+  const [planSearch, setPlanSearch] = useState('');
+  const [planSearchResults, setPlanSearchResults] = useState<any[]>([]);
+  const [planSearching, setPlanSearching] = useState(false);
+  const [selectedPlace, setSelectedPlace] = useState<any | null>(null);
+  const [visitDate, setVisitDate] = useState<string>('');
+  const [planningError, setPlanningError] = useState<string | null>(null);
+  const [isPlanning, setIsPlanning] = useState(false);
 
   // Real data state – starts empty, falls back to mock only when API fails
   const [tripPlans, setTripPlans] = useState<TripPlan[]>([]);
@@ -154,6 +162,69 @@ export default function JournalPage() {
     }
   };
 
+  const openPlanModal = () => {
+    setShowPlanModal(true);
+    setPlanningError(null);
+    setPlanSearch('');
+    setPlanSearchResults([]);
+    setSelectedPlace(null);
+    setVisitDate('');
+  };
+
+  const closePlanModal = () => {
+    setShowPlanModal(false);
+    setPlanningError(null);
+  };
+
+  const handlePlanSearch = async () => {
+    const q = planSearch.trim();
+    if (!q) return;
+    setPlanSearching(true);
+    setPlanningError(null);
+    try {
+      const res = await searchPlaces(q, 10);
+      const data = res.data as any;
+      const places = Array.isArray(data?.places) ? data.places : Array.isArray(data) ? data : [];
+      setPlanSearchResults(places);
+    } catch (e: any) {
+      console.error('[Journal] Plan search failed:', e);
+      setPlanSearchResults([]);
+      setPlanningError(e?.response?.data?.detail || e?.message || 'Search failed');
+    } finally {
+      setPlanSearching(false);
+    }
+  };
+
+  const handleCreateTripPlan = async () => {
+    if (!selectedPlace?.id) {
+      setPlanningError('Select a park first');
+      return;
+    }
+    if (!visitDate) {
+      setPlanningError('Select a visit date');
+      return;
+    }
+
+    setIsPlanning(true);
+    setPlanningError(null);
+    try {
+      const res = await planTrip(selectedPlace.id, visitDate);
+      const journalEntryId = res.data?.journal_entry_id;
+      if (!journalEntryId) {
+        throw new Error('Trip plan created but no journal entry ID returned');
+      }
+      closePlanModal();
+      // Refresh data in background
+      fetchUserData();
+      router.push(`/journal/plans/${journalEntryId}`);
+    } catch (e: any) {
+      console.error('[Journal] Failed to create trip plan:', e);
+      setPlanningError(e?.response?.data?.detail || e?.message || 'Failed to create trip plan');
+    } finally {
+      setIsPlanning(false);
+    }
+  };
+
   return (
     <JournalShell title="Journal">
       {/* Active Hike Banner */}
@@ -255,7 +326,9 @@ export default function JournalPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-medium">Trip Plans</h3>
-                <button className="px-4 py-2 rounded-xl font-medium text-white transition-all hover:scale-105"
+                <button
+                  onClick={openPlanModal}
+                  className="px-4 py-2 rounded-xl font-medium text-white transition-all hover:scale-105"
                         style={{ backgroundColor: '#4F8A6B' }}>
                   + New Trip
                 </button>
@@ -265,7 +338,9 @@ export default function JournalPage() {
                   <div className="text-6xl mb-4">📋</div>
                   <h4 className="text-xl font-light mb-2">No trips planned yet</h4>
                   <p className="text-gray-600 mb-6">Start planning your next adventure</p>
-                  <button className="px-6 py-3 rounded-xl font-medium text-white"
+                  <button
+                    onClick={openPlanModal}
+                    className="px-6 py-3 rounded-xl font-medium text-white"
                           style={{ backgroundColor: '#4F8A6B' }}>
                     Plan Your First Trip
                   </button>
@@ -425,6 +500,114 @@ export default function JournalPage() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Plan Trip Modal */}
+      {showPlanModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={closePlanModal}>
+          <div
+            className="w-full max-w-2xl rounded-3xl p-6"
+            style={{ backgroundColor: '#FFFFFF' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <div className="text-xl font-medium text-text">Plan your next trip</div>
+                <div className="text-sm text-textSecondary">Choose a park and a visit date.</div>
+              </div>
+              <button onClick={closePlanModal} className="text-2xl leading-none text-textSecondary hover:text-text">×</button>
+            </div>
+
+            {/* Search */}
+            <div className="flex gap-2 mb-4">
+              <input
+                value={planSearch}
+                onChange={(e) => setPlanSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handlePlanSearch();
+                }}
+                placeholder="Search parks (e.g., Yosemite)"
+                className="flex-1 px-4 py-3 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              <button
+                onClick={handlePlanSearch}
+                disabled={planSearching}
+                className="px-4 py-3 rounded-xl font-medium text-white disabled:opacity-50"
+                style={{ backgroundColor: '#4F8A6B' }}
+              >
+                {planSearching ? 'Searching…' : 'Search'}
+              </button>
+            </div>
+
+            {/* Results */}
+            {planSearchResults.length > 0 && !selectedPlace && (
+              <div className="max-h-56 overflow-y-auto rounded-2xl border border-border mb-4">
+                {planSearchResults.map((p, idx) => (
+                  <button
+                    key={p.id || idx}
+                    onClick={() => setSelectedPlace(p)}
+                    className="w-full text-left px-4 py-3 hover:bg-slate-50 border-b last:border-b-0"
+                    style={{ borderColor: '#E8E8E3' }}
+                  >
+                    <div className="font-medium text-text">{p.name || 'Unnamed place'}</div>
+                    <div className="text-xs text-textSecondary">{p.description || p.formatted_address || ''}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Selected place + date */}
+            {selectedPlace && (
+              <div className="mb-4 p-4 rounded-2xl" style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3' }}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium text-text">{selectedPlace.name}</div>
+                    <div className="text-xs text-textSecondary">{selectedPlace.description || selectedPlace.formatted_address || ''}</div>
+                  </div>
+                  <button
+                    onClick={() => setSelectedPlace(null)}
+                    className="text-sm text-textSecondary hover:text-text"
+                  >
+                    Change
+                  </button>
+                </div>
+                <div className="mt-4">
+                  <label className="block text-xs text-textSecondary mb-1">Visit date</label>
+                  <input
+                    type="date"
+                    value={visitDate}
+                    onChange={(e) => setVisitDate(e.target.value)}
+                    className="px-4 py-3 rounded-xl border border-border bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              </div>
+            )}
+
+            {planningError && (
+              <div className="mb-4 p-3 rounded-2xl text-sm" style={{ backgroundColor: '#FFF8F0', border: '1px solid #F4A34040', color: '#5F6F6A' }}>
+                {planningError}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={closePlanModal}
+                className="px-4 py-3 rounded-xl font-medium"
+                style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3', color: '#5F6F6A' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateTripPlan}
+                disabled={isPlanning}
+                className="px-4 py-3 rounded-xl font-medium text-white disabled:opacity-50"
+                style={{ backgroundColor: '#4F8A6B' }}
+              >
+                {isPlanning ? 'Planning…' : 'Create trip plan'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </JournalShell>

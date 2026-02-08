@@ -23,6 +23,9 @@ import {
   Image,
   RefreshControl,
   Dimensions,
+  Platform,
+  Alert,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Polyline, Marker, PROVIDER_GOOGLE } from 'react-native-maps';
@@ -35,6 +38,7 @@ import { Chip } from '../components/ui/Chip';
 import { LoadingState } from '../components/ui/LoadingState';
 import { EmptyState } from '../components/ui/EmptyState';
 import { api } from '../config/api';
+import * as ImagePicker from 'expo-image-picker';
 import { Badge, BADGE_LEVEL_COLORS } from '../types/badge';
 import { CapturedDiscovery, DISCOVERY_ICONS } from '../types/discovery';
 import { formatMiles, formatFeet, formatElapsedTime } from '../utils/formatting';
@@ -71,6 +75,7 @@ interface HikeData {
     analysis?: Record<string, any>;
     status: string;
   };
+  media?: Array<any>;
 }
 
 export const HikeDetailScreen: React.FC = ({ route, navigation }: any) => {
@@ -79,7 +84,10 @@ export const HikeDetailScreen: React.FC = ({ route, navigation }: any) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'discoveries' | 'insights'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'discoveries' | 'media' | 'insights'>('overview');
+  const [uploading, setUploading] = useState(false);
+  const [enhancing, setEnhancing] = useState<Record<string, boolean>>({});
+  const [creating3d, setCreating3d] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     loadHikeDetail();
@@ -119,6 +127,17 @@ export const HikeDetailScreen: React.FC = ({ route, navigation }: any) => {
       } catch (err) {
         console.warn('[HikeDetail] Could not load insights:', err);
       }
+
+      // Try to load media
+      try {
+        const mediaRes = await api.get(`/api/v1/hikes/${hikeId}/media`);
+        setHike(prev => prev ? {
+          ...prev,
+          media: mediaRes.data?.media || [],
+        } : null);
+      } catch (err) {
+        console.warn('[HikeDetail] Could not load media:', err);
+      }
     } catch (err: any) {
       console.error('[HikeDetail] Failed to load hike:', err);
       setError('Failed to load hike details');
@@ -145,6 +164,95 @@ export const HikeDetailScreen: React.FC = ({ route, navigation }: any) => {
       });
     } catch (error) {
       console.error('Share failed:', error);
+    }
+  };
+
+  const handleUploadMorePhotos = async () => {
+    if (!hikeId) return;
+
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (perm.status !== 'granted') {
+      Alert.alert('Permission required', 'Please allow photo library access to upload photos.');
+      return;
+    }
+
+    try {
+      setUploading(true);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 0.9,
+      });
+
+      if (result.canceled) return;
+
+      for (const asset of result.assets) {
+        const uri = asset.uri;
+        const name = uri.split('/').pop() || `photo_${Date.now()}.jpg`;
+        const mimeType = asset.mimeType || 'image/jpeg';
+
+        const form = new FormData();
+        form.append('type', 'photo' as any);
+        form.append('file', { uri, name, type: mimeType } as any);
+
+        const res = await api.post(`/api/v1/hikes/${hikeId}/media`, form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+
+        const created = res.data;
+        setHike(prev => prev ? {
+          ...prev,
+          media: [...(prev.media || []), created],
+        } : prev);
+      }
+    } catch (e) {
+      console.error('[HikeDetail] Upload failed:', e);
+      Alert.alert('Upload failed', 'Could not upload your photo(s). Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleEnhancePhoto = async (mediaId: string) => {
+    try {
+      setEnhancing((p) => ({ ...p, [mediaId]: true }));
+      const res = await api.post(`/api/v1/media/${mediaId}/enhance`, {
+        lighting: 'natural',
+        style: 'cinematic',
+        enhance_subject: true,
+        remove_shadows: false,
+        background_replacement: false,
+      });
+      const jobId = res.data?.job_id;
+      Alert.alert('Enhancement started', jobId ? `Job: ${jobId}` : 'Your photo is being enhanced.');
+    } catch (e: any) {
+      console.error('[HikeDetail] Enhance failed:', e);
+      Alert.alert('Enhancement failed', e?.response?.data?.detail || e?.message || 'Could not start enhancement.');
+    } finally {
+      setEnhancing((p) => ({ ...p, [mediaId]: false }));
+    }
+  };
+
+  const handleCreate3D = async (mediaId: string) => {
+    try {
+      setCreating3d((p) => ({ ...p, [mediaId]: true }));
+      const res = await api.post(`/api/v1/media/${mediaId}/3d`);
+      const modelUrl = res.data?.model_url;
+      const base = (api.defaults.baseURL || '').toString();
+      if (modelUrl && base) {
+        const full = modelUrl.startsWith('http') ? modelUrl : `${base}${modelUrl}`;
+        Alert.alert('3D started', 'DEV mode: placeholder OBJ will download when ready.');
+        setTimeout(() => {
+          Linking.openURL(full).catch(() => {});
+        }, 1200);
+      } else {
+        Alert.alert('3D started', 'Job started.');
+      }
+    } catch (e: any) {
+      console.error('[HikeDetail] 3D start failed:', e);
+      Alert.alert('3D failed', e?.response?.data?.detail || e?.message || 'Could not start 3D generation.');
+    } finally {
+      setCreating3d((p) => ({ ...p, [mediaId]: false }));
     }
   };
 
@@ -228,7 +336,7 @@ export const HikeDetailScreen: React.FC = ({ route, navigation }: any) => {
         <View style={styles.mapContainer}>
           <MapView
             style={styles.map}
-            provider={PROVIDER_GOOGLE}
+            provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
             initialRegion={getMapRegion()}
             scrollEnabled={false}
             zoomEnabled={false}
@@ -336,6 +444,14 @@ export const HikeDetailScreen: React.FC = ({ route, navigation }: any) => {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={[styles.tab, activeTab === 'media' && styles.tabActive]}
+            onPress={() => setActiveTab('media')}
+          >
+            <Text style={[styles.tabText, activeTab === 'media' && styles.tabTextActive]}>
+              Media
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[styles.tab, activeTab === 'insights' && styles.tabActive]}
             onPress={() => setActiveTab('insights')}
           >
@@ -371,7 +487,11 @@ export const HikeDetailScreen: React.FC = ({ route, navigation }: any) => {
                 <Text variant="h3" style={styles.sectionTitle}>Wildlife Spotted</Text>
                 <View style={styles.wildlifeList}>
                   {hike.wildlife.map((item, idx) => (
-                    <Chip key={idx} label={`${DISCOVERY_ICONS[item.category] || '🐾'} ${item.name}`} size="sm" />
+                    <Chip
+                      key={idx}
+                      label={`${(DISCOVERY_ICONS as any)[item.category] || '🐾'} ${item.name}`}
+                      size="sm"
+                    />
                   ))}
                 </View>
               </View>
@@ -420,6 +540,72 @@ export const HikeDetailScreen: React.FC = ({ route, navigation }: any) => {
                 icon="camera-outline"
                 title="No discoveries"
                 message="You didn't capture any discoveries on this hike"
+              />
+            )}
+          </View>
+        )}
+
+        {activeTab === 'media' && (
+          <View style={styles.tabContent}>
+            <View style={styles.mediaHeaderRow}>
+              <Text variant="h3">Photos</Text>
+              <TouchableOpacity
+                onPress={handleUploadMorePhotos}
+                disabled={uploading}
+                style={[styles.uploadButton, uploading && { opacity: 0.6 }]}
+              >
+                <Ionicons name="cloud-upload-outline" size={18} color={colors.surface} />
+                <Text style={styles.uploadButtonText}>
+                  {uploading ? 'Uploading…' : 'Upload more'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {(hike.media || []).filter((m: any) => m.type === 'photo').length > 0 ? (
+              <View style={styles.mediaGrid}>
+                {(hike.media || [])
+                  .filter((m: any) => m.type === 'photo')
+                  .map((m: any) => (
+                    <View key={m.id} style={styles.mediaCard}>
+                      {m.url ? (
+                        <Image
+                          source={{ uri: m.url.startsWith('http') ? m.url : `${api.defaults.baseURL}${m.url}` }}
+                          style={styles.mediaThumb}
+                        />
+                      ) : (
+                        <View style={[styles.mediaThumb, { backgroundColor: colors.border, justifyContent: 'center', alignItems: 'center' }]}>
+                          <Ionicons name="image-outline" size={28} color={colors.textTertiary} />
+                        </View>
+                      )}
+
+                      <View style={styles.mediaActionsRow}>
+                        <TouchableOpacity
+                          onPress={() => handleEnhancePhoto(m.id)}
+                          disabled={!!enhancing[m.id]}
+                          style={[styles.mediaActionBtn, !!enhancing[m.id] && { opacity: 0.6 }]}
+                        >
+                          <Text style={styles.mediaActionText}>
+                            {!!enhancing[m.id] ? 'Enhancing…' : '✨ AI Enhance'}
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => handleCreate3D(m.id)}
+                          disabled={!!creating3d[m.id]}
+                          style={[styles.mediaActionBtnSecondary, !!creating3d[m.id] && { opacity: 0.6 }]}
+                        >
+                          <Text style={styles.mediaActionTextSecondary}>
+                            {!!creating3d[m.id] ? '3D…' : '🧊 3D'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+              </View>
+            ) : (
+              <EmptyState
+                icon="images-outline"
+                title="No photos"
+                message="Upload extra photos from your hike, then enhance them with AI or generate a 3D model."
               />
             )}
           </View>
@@ -566,6 +752,78 @@ const styles = StyleSheet.create({
   },
   tabContent: {
     padding: 20,
+  },
+  mediaHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  uploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  uploadButtonText: {
+    color: colors.surface,
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  mediaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  mediaCard: {
+    width: (SCREEN_WIDTH - 20 * 2 - 12) / 2,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  mediaThumb: {
+    width: '100%',
+    height: 140,
+  },
+  mediaActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    padding: 10,
+  },
+  mediaActionBtn: {
+    flex: 1,
+    backgroundColor: '#E8F4F8',
+    borderRadius: 10,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#4C7EF340',
+  },
+  mediaActionBtnSecondary: {
+    width: 64,
+    backgroundColor: '#FAFAF8',
+    borderRadius: 10,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  mediaActionText: {
+    color: colors.text,
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  mediaActionTextSecondary: {
+    color: colors.textSecondary,
+    fontWeight: '600',
+    fontSize: 12,
   },
   section: {
     marginBottom: 24,

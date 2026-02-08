@@ -11,6 +11,7 @@ import { UploadQueue } from '../components/UploadQueue';
 export const ProfileScreen: React.FC = ({ navigation }: any) => {
   const { user, logout } = useAuthStore();
   const [offlineDownloads, setOfflineDownloads] = useState(false);
+  const enableLegacyScreens = process.env.EXPO_PUBLIC_ENABLE_LEGACY_SCREENS === '1';
 
   const handleConnectDevice = (type: string) => {
     if (type === 'wearable') {
@@ -42,29 +43,49 @@ export const ProfileScreen: React.FC = ({ navigation }: any) => {
         <Card style={styles.section}>
           <Text variant="h3" style={styles.sectionTitle}>Devices</Text>
           
-          <TouchableOpacity
-            style={styles.deviceItem}
-            onPress={() => handleConnectDevice('wearable')}
-          >
-            <Ionicons name="watch-outline" size={24} color={colors.primary} />
-            <View style={styles.deviceContent}>
-              <Text variant="body">Wearable Device</Text>
-              <Text variant="caption" color="secondary">Apple Watch, Garmin, Fitbit</Text>
+          {enableLegacyScreens ? (
+            <TouchableOpacity
+              style={styles.deviceItem}
+              onPress={() => handleConnectDevice('wearable')}
+            >
+              <Ionicons name="watch-outline" size={24} color={colors.primary} />
+              <View style={styles.deviceContent}>
+                <Text variant="body">Wearable Device</Text>
+                <Text variant="caption" color="secondary">Apple Watch, Garmin, Fitbit</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.deviceItem}>
+              <Ionicons name="watch-outline" size={24} color={colors.textTertiary} />
+              <View style={styles.deviceContent}>
+                <Text variant="body">Wearable Device</Text>
+                <Text variant="caption" color="secondary">Coming soon</Text>
+              </View>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-          </TouchableOpacity>
+          )}
 
-          <TouchableOpacity
-            style={styles.deviceItem}
-            onPress={() => handleConnectDevice('ecodroid')}
-          >
-            <Ionicons name="hardware-chip-outline" size={24} color={colors.primary} />
-            <View style={styles.deviceContent}>
-              <Text variant="body">EcoDroid</Text>
-              <Text variant="caption" color="secondary">Environmental sensors</Text>
+          {enableLegacyScreens ? (
+            <TouchableOpacity
+              style={styles.deviceItem}
+              onPress={() => handleConnectDevice('ecodroid')}
+            >
+              <Ionicons name="hardware-chip-outline" size={24} color={colors.primary} />
+              <View style={styles.deviceContent}>
+                <Text variant="body">EcoDroid</Text>
+                <Text variant="caption" color="secondary">Environmental sensors</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.deviceItem}>
+              <Ionicons name="hardware-chip-outline" size={24} color={colors.textTertiary} />
+              <View style={styles.deviceContent}>
+                <Text variant="body">EcoDroid</Text>
+                <Text variant="caption" color="secondary">Coming soon</Text>
+              </View>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-          </TouchableOpacity>
+          )}
         </Card>
 
         <Card style={styles.section}>

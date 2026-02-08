@@ -34,7 +34,8 @@ export async function syncMediaQueue(
       }
 
       const fileContent = await FileSystem.readAsStringAsync(item.uri, {
-        encoding: FileSystem.EncodingType.Base64,
+        // SDK 54: `EncodingType` enum is not exported; use string encoding.
+        encoding: 'base64' as any,
       });
 
       const blob = await fetch(`data:${contentType};base64,${fileContent}`).then((r) => r.blob());

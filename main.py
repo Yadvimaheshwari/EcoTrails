@@ -18,7 +18,8 @@ from backend.models import (
     EcoDroidDevice, WearableDevice, WearableAlert,
     User, Hike, Place, Trail, Media, Discovery, Achievement, Device, UserFavoritePlace,
     TrailCheckpoint, HikeCheckpointProgress,
-    SocialPost, PostComment, PostLike
+    SocialPost, PostComment, PostLike,
+    OfflineMapAsset,
 )
 from backend.auth_service import generate_token, verify_token, send_magic_link, verify_magic_link
 from backend.places_service import search_places, get_place_details, get_nearby_places, get_trail_details, search_trails
@@ -38,7 +39,8 @@ from backend.stats_service import get_user_stats, get_hike_stats
 from backend.sync_service import sync_offline_data, get_sync_status
 from backend.search_service import search_hikes, search_places as search_places_service
 from backend.storage import save_local_file, get_local_file, get_local_file_path
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi.responses import PlainTextResponse
 import pathlib
 from backend.realtime_processor import RealtimeProcessor
 from backend.google_maps_service import get_google_maps_service
@@ -64,6 +66,65 @@ ATLAS_SYSTEM_INSTRUCTION = (
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("EcoAtlas")
+
+
+def _safe_filename(name: str) -> str:
+    import re
+    s = (name or "offline-map").strip().lower()
+    s = re.sub(r"[^a-z0-9]+", "-", s)
+    s = re.sub(r"-+", "-", s).strip("-")
+    return s or "offline-map"
+
+
+def _select_best_nps_park_code(place_name: str, parks: list) -> tuple[Optional[str], Optional[str], Optional[int]]:
+    """
+    Select best park match from NPS API /parks results using a 0-100 fullName match score.
+    Returns (parkCode, fullName, score). If best score < 50, returns (None, None, None).
+    """
+    try:
+        from backend.nps_matcher import select_best_nps_park
+
+        sel = select_best_nps_park(place_name, parks, min_score=50)
+        if not sel:
+            return None, None, None
+        return sel.park_code, sel.full_name, sel.score
+    except Exception:
+        return None, None, None
+
+
+async def _resolve_official_pdf_url_for_place(
+    place: "Place",
+    *,
+    park_code: Optional[str],
+    db: Session,
+    full_name: Optional[str] = None,
+) -> Optional[str]:
+    """
+    Resolve a best-effort official printable PDF URL for a place.
+    Uses curated URLs, seeded sources, then NPS scraping when a valid parkCode exists.
+    """
+    from backend.offline_maps_service import (
+        resolve_curated_assets,
+        resolve_seed_assets,
+        resolve_scraped_assets,
+    )
+
+    # 1) curated
+    candidates = resolve_curated_assets(place.name)
+
+    # 2) seed + scrape (only if we have a valid NPS park code)
+    nps_code = (park_code or "").strip().lower() if park_code else None
+    if nps_code:
+        candidates.extend(resolve_seed_assets(nps_code))
+        candidates.extend(resolve_scraped_assets(nps_code, db, full_name=full_name or place.name))
+
+    for c in candidates:
+        url = (c.get("url") or "").strip()
+        if not url:
+            continue
+        if ".pdf" in url.lower():
+            return url
+    return None
 
 # Initialize Gemini client lazily (only when needed, not at module level)
 # This prevents import errors when API_KEY is not set
@@ -1500,12 +1561,13 @@ async def get_place_alerts(place_id: str, db: Session = Depends(get_db)):
     
     # Try to find park code from NPS
     nps_service = get_nps_service()
-    parks = await nps_service.search_parks(place_name, limit=1)
-    
-    if parks and parks[0].get("id"):
-        park_code = parks[0]["id"]
-        alerts = await nps_service.get_park_alerts(park_code)
-        return {"alerts": alerts, "park_code": park_code}
+    parks = await nps_service.search_parks(place_name, limit=8)
+    from backend.nps_matcher import select_best_nps_park
+
+    sel = select_best_nps_park(place_name, parks, min_score=50)
+    if sel:
+        alerts = await nps_service.get_park_alerts(sel.park_code)
+        return {"alerts": alerts, "park_code": sel.park_code, "park_full_name": sel.full_name, "score": sel.score}
     
     return {"alerts": [], "park_code": None}
 
@@ -1533,6 +1595,16 @@ async def get_place_trails(place_id: str, db: Session = Depends(get_db)):
     
     # ===== STEP 1: Resolve place =====
     place = db.query(Place).filter(Place.id == place_id).first()
+    if not place:
+        # Auto-resolve+save place (prevents frequent 404s for Google place IDs)
+        try:
+            from backend.places_service import get_place_details as resolve_place_details
+            await resolve_place_details(place_id, db)
+        except Exception as e:
+            logger.warning(f"[trails] Failed to resolve place details for {place_id}: {e}")
+
+        place = db.query(Place).filter(Place.id == place_id).first()
+
     if not place:
         logger.warning(f"[trails] Place not found: {place_id}")
         raise HTTPException(
@@ -1568,8 +1640,26 @@ async def get_place_trails(place_id: str, db: Session = Depends(get_db)):
                 "estimated_duration_minutes": t.estimated_duration_minutes,
                 "description": t.description,
                 "meta_data": t.meta_data,
-                "lat": lat,
-                "lng": lng,
+                # Trail location should come from the trail's own metadata when available.
+                # Fallback to place center only if we truly don't know the trail location.
+                "lat": (
+                    (t.meta_data or {}).get("trailhead_lat")
+                    or (t.meta_data or {}).get("lat")
+                    or (t.meta_data or {}).get("latitude")
+                    or lat
+                ),
+                "lng": (
+                    (t.meta_data or {}).get("trailhead_lng")
+                    or (t.meta_data or {}).get("lng")
+                    or (t.meta_data or {}).get("longitude")
+                    or lng
+                ),
+                # Optional bounds if we have them (used by clients to zoom-to-trail)
+                "bounding_box": (
+                    (t.meta_data or {}).get("bounding_box")
+                    or (t.meta_data or {}).get("bounds")
+                    or (t.meta_data or {}).get("bbox")
+                ),
             } for t in trails],
             "source": "database",
             "meta": {**log_ctx, "count": len(trails), "provider_used": "database"}
@@ -1809,7 +1899,7 @@ async def get_trail_map(
     Successful generations are cached for 24 hours.
     """
     from backend.trail_map_service import generate_trail_map
-    from backend.official_map_service import official_map_service
+    from backend.official_map_service import OfficialMapService
     from backend.redis_client import redis_client
     
     CACHE_TTL = 86400  # 24 hours
@@ -1844,7 +1934,9 @@ async def get_trail_map(
     if prefer_official:
         try:
             logger.info(f"Attempting to fetch official map for {place.name} - {trail.name}")
-            official_map = official_map_service.fetch_nps_map(place.name, trail.name)
+            # NOTE: fetch_nps_map expects only a park/place name. Passing trail.name here
+            # caused a runtime error and prevented any official-map fallback.
+            official_map = OfficialMapService().fetch_nps_map(place.name)
             
             if official_map and official_map.get('success'):
                 logger.info(f"Found official map: {official_map['map_url']}")
@@ -2457,6 +2549,77 @@ async def register_media_endpoint(
     if not result:
         raise HTTPException(status_code=404, detail="Media not found")
     return {"id": result.id, "url": result.url}
+
+
+@app.post("/api/v1/media/{media_id}/3d")
+async def start_media_3d_endpoint(
+    media_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Start a photo-to-3D job for a media item (DEV stub)."""
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    from backend.photo_3d_service import start_photo_3d_job
+    result = start_photo_3d_job(media_id, user.id, db)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to start 3D job"))
+    return result
+
+
+@app.get("/api/v1/3d-jobs/{job_id}")
+async def get_3d_job_status_endpoint(
+    job_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get status of a 3D job (DEV stub)."""
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    from backend.photo_3d_service import get_photo_3d_job
+    job = get_photo_3d_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Access control: ensure job belongs to the current user via hike ownership
+    media_id = job.get("media_id")
+    media = db.query(Media).filter(Media.id == media_id).first() if media_id else None
+    if not media:
+        raise HTTPException(status_code=404, detail="Media not found")
+    hike = db.query(Hike).filter(Hike.id == media.hike_id, Hike.user_id == user.id).first()
+    if not hike:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return job
+
+
+@app.get("/api/v1/3d-jobs/{job_id}/model.obj")
+async def get_3d_job_model_obj(
+    job_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Download placeholder OBJ for a completed 3D job (DEV stub)."""
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    from backend.photo_3d_service import get_photo_3d_job, get_placeholder_obj
+    job = get_photo_3d_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Access control via hike ownership
+    media_id = job.get("media_id")
+    media = db.query(Media).filter(Media.id == media_id).first() if media_id else None
+    if not media:
+        raise HTTPException(status_code=404, detail="Media not found")
+    hike = db.query(Hike).filter(Hike.id == media.hike_id, Hike.user_id == user.id).first()
+    if not hike:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if job.get("status") != "completed":
+        raise HTTPException(status_code=409, detail=f"Job not completed (status={job.get('status')})")
+
+    return PlainTextResponse(get_placeholder_obj(), media_type="text/plain")
 
 @app.get("/api/v1/hikes/{hike_id}/media")
 async def get_hike_media_endpoint(
@@ -3217,21 +3380,29 @@ async def bootstrap_discoveries(
     place = db.query(Place).filter(Place.id == place_id).first() if place_id else None
     
     # Get coordinates
-    base_lat = 37.7749  # Default to SF
-    base_lng = -122.4194
+    base_lat: Optional[float] = None
+    base_lng: Optional[float] = None
     
     if trail and trail.meta_data:
         meta = trail.meta_data if isinstance(trail.meta_data, dict) else {}
-        if 'lat' in meta:
-            base_lat = float(meta['lat'])
-        if 'lng' in meta:
-            base_lng = float(meta['lng'])
+        # Prefer explicit trailhead coordinates
+        if meta.get("trailhead_lat") is not None:
+            base_lat = float(meta["trailhead_lat"])
+        elif meta.get("lat") is not None:
+            base_lat = float(meta["lat"])
+        if meta.get("trailhead_lng") is not None:
+            base_lng = float(meta["trailhead_lng"])
+        elif meta.get("lng") is not None:
+            base_lng = float(meta["lng"])
     elif place and place.location:
         loc = place.location if isinstance(place.location, dict) else {}
-        if 'lat' in loc:
-            base_lat = float(loc['lat'])
-        if 'lng' in loc:
-            base_lng = float(loc['lng'])
+        if loc.get("lat") is not None:
+            base_lat = float(loc["lat"])
+        if loc.get("lng") is not None:
+            base_lng = float(loc["lng"])
+
+    if base_lat is None or base_lng is None:
+        raise HTTPException(status_code=400, detail="Unable to load trail location. Please try again.")
     
     # Generate discovery nodes
     nodes = generate_discovery_nodes(hike_id, trail_id or "", place, base_lat, base_lng)
@@ -3637,32 +3808,386 @@ async def get_park_official_map(
     Get official park map (PDF) URL.
     For NPS parks, fetches from NPS website.
     """
-    from backend.official_map_service import official_map_service
+    from backend.official_map_service import OfficialMapService
     
     place = db.query(Place).filter(Place.id == park_id).first()
     if not place:
         raise HTTPException(status_code=404, detail="Park not found")
     
+    # Extract optional hints for better scraping/fallbacks
+    meta = place.meta_data if isinstance(place.meta_data, dict) else {}
+    website_url = meta.get("website") or meta.get("url") or meta.get("website_url")
+    loc = place.location if isinstance(place.location, dict) else {}
+    lat = loc.get("lat") or loc.get("latitude")
+    lng = loc.get("lng") or loc.get("longitude")
+
     try:
-        result = official_map_service.fetch_nps_map(place.name)
-        if result and result.get("success"):
+        asset = OfficialMapService().fetch_official_map_asset(
+            place.name,
+            website_url=website_url,
+            lat=lat,
+            lng=lng,
+        )
+        if asset and asset.get("success") and asset.get("map_url"):
+            # Backwards compatible response: keep pdfUrl but also return mapUrl + assetType.
             return {
                 "success": True,
-                "pdfUrl": result.get("map_url"),
-                "sourceName": result.get("source", "Official Park Map"),
-                "mapType": result.get("map_type", "trail_map"),
-                "lastFetchedAt": datetime.utcnow().isoformat()
+                "pdfUrl": asset.get("map_url"),
+                "mapUrl": asset.get("map_url"),
+                "assetType": asset.get("asset_type"),  # 'pdf' | 'image'
+                "sourceName": asset.get("source", "Offline Map"),
+                "mapType": asset.get("map_type", "overview"),
+                "method": asset.get("method"),
+                "lastFetchedAt": asset.get("fetched_at") or datetime.utcnow().isoformat(),
+                "parkName": asset.get("place_name") or place.name,
             }
     except Exception as e:
-        logger.warning(f"Failed to fetch official map for {place.name}: {e}")
-    
-    # Fallback response
+        logger.warning(f"Failed to fetch offline map asset for {place.name}: {e}")
+
     return {
         "success": False,
         "pdfUrl": None,
+        "mapUrl": None,
+        "assetType": None,
         "sourceName": None,
-        "message": "No official map found for this park"
+        "message": "No offline map asset available for this park",
     }
+
+
+# ======================================
+# OFFLINE PDF MAP PACKS (PER PARK)
+# ======================================
+
+@app.get("/api/v1/parks/{park_id}/offline-maps")
+async def list_offline_maps_for_park(
+    park_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    List offline map assets for a park (status + metadata).
+    """
+    place = db.query(Place).filter(Place.id == park_id).first()
+    if not place:
+        raise HTTPException(status_code=404, detail="Park not found")
+
+    assets = (
+        db.query(OfflineMapAsset)
+        .filter(OfflineMapAsset.park_id == park_id)
+        .order_by(OfflineMapAsset.created_at.desc())
+        .all()
+    )
+    from backend.offline_maps_service import serialize_asset
+    return {
+        "success": True,
+        "parkId": park_id,
+        "parkName": place.name,
+        "assets": [serialize_asset(a) for a in assets],
+    }
+
+
+@app.post("/api/v1/parks/{park_id}/offline-maps/download")
+async def download_offline_maps_for_park_endpoint(
+    park_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Resolve + download official printable maps (PDF/JPG) for a park.
+    Returns updated statuses.
+    """
+    from backend.offline_maps_service import download_offline_maps_for_park
+    return await download_offline_maps_for_park(park_id, db)
+
+
+@app.get("/api/v1/offline-maps/{asset_id}/file")
+async def get_offline_map_file(
+    asset_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Stream the downloaded offline map file.
+    """
+    asset = db.query(OfflineMapAsset).filter(OfflineMapAsset.id == asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Offline map asset not found")
+    if asset.status != "downloaded" or not asset.local_path:
+        raise HTTPException(status_code=409, detail="Offline map not downloaded")
+
+    file_path = pathlib.Path(asset.local_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Offline map file missing")
+
+    media_type = "application/pdf" if asset.file_type == "pdf" else "application/octet-stream"
+    return FileResponse(str(file_path), media_type=media_type, filename=file_path.name)
+
+
+@app.get("/api/v1/places/{place_id}/offline-map/pdf")
+async def download_place_offline_map_pdf(
+    place_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Download an official printable PDF map for a place.
+
+    - Resolves an official PDF URL (NPS brochures/maps) when available
+    - Fetches server-side (avoids browser CORS issues)
+    - Streams bytes back to client with attachment headers
+    """
+    place = db.query(Place).filter(Place.id == place_id).first()
+    if not place:
+        raise HTTPException(status_code=404, detail="Place not found")
+
+    # Derive parkCode per request from the NPS parks API response (no cached/meta parkCode).
+    park_code: Optional[str] = None
+    full_name: Optional[str] = None
+    match_score: Optional[int] = None
+    try:
+        nps_api_key = os.environ.get("NPS_API_KEY")
+        if nps_api_key and place.name:
+            import requests
+
+            resp = requests.get(
+                "https://developer.nps.gov/api/v1/parks",
+                params={"q": place.name, "limit": 8, "api_key": nps_api_key},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                parks = resp.json().get("data", []) or []
+                park_code, full_name, match_score = _select_best_nps_park_code(place.name, parks)
+    except Exception as e:
+        logger.info(f"[OfflineMapPDF] placeId={place_id} nps_search_failed err={e}")
+
+    logger.info(
+        f"[OfflineMapPDF] placeId={place_id} selected parkCode={park_code!r} fullName={full_name!r} score={match_score!r}"
+    )
+    if not park_code:
+        return JSONResponse(status_code=200, content={"available": False, "reason": "no_nps_match"})
+
+    pdf_url = await _resolve_official_pdf_url_for_place(place, park_code=park_code, db=db, full_name=full_name)
+    if not pdf_url or not isinstance(pdf_url, str) or not pdf_url.strip():
+        return JSONResponse(status_code=200, content={"available": False, "reason": "no_pdf_found", "parkCode": park_code})
+
+    from urllib.parse import urlparse
+
+    safe_name = _safe_filename(place.name)
+    filename = f"{safe_name}-offline-map.pdf"
+
+    def _classify_upstream_url(u: str) -> str:
+        u_l = (u or "").lower()
+        if "style.json" in u_l:
+            return "style.json"
+        if "/glyphs/" in u_l or "glyph" in u_l:
+            return "glyph"
+        if "sprite" in u_l:
+            return "sprite"
+        if "/{z}/" in u_l or "/tiles/" in u_l or "/tile/" in u_l or any(x in u_l for x in ("/0/0/0", "/1/1/1")):
+            return "tile"
+        if u_l.endswith(".pdf") or ".pdf" in u_l:
+            return "pdf"
+        if u_l.endswith(".png") or u_l.endswith(".jpg") or u_l.endswith(".jpeg"):
+            return "image"
+        return "unknown"
+
+    # Validate URL is http(s) and looks like a PDF link
+    parsed = urlparse(pdf_url)
+    if parsed.scheme not in ("http", "https"):
+        logger.warning(f"[OfflineMapPDF] placeId={place_id} invalid_scheme url={pdf_url!r}")
+        return JSONResponse(status_code=200, content={"available": False, "reason": "no_pdf_found", "parkCode": park_code})
+
+    if "undefined" in pdf_url.lower() or "null" in pdf_url.lower():
+        logger.warning(f"[OfflineMapPDF] placeId={place_id} invalid_url_contains_undefined url={pdf_url!r}")
+        return JSONResponse(status_code=200, content={"available": False, "reason": "no_pdf_found", "parkCode": park_code})
+
+    try:
+        logger.info(
+            f"[OfflineMapPDF] placeId={place_id} parkName={place.name!r} resolved_url={pdf_url} "
+            f"url_type={_classify_upstream_url(pdf_url)}"
+        )
+        logger.info(f"[OfflineMapPDF] placeId={place_id} parkCode={park_code!r}")
+
+        # DISCOVERY STEP: HEAD validate before attempting download
+        head_method = "HEAD"
+        head_status = None
+        head_ct = None
+        try:
+            hr = requests.head(
+                pdf_url,
+                timeout=10,
+                headers={"User-Agent": "EcoTrails/1.0"},
+                allow_redirects=True,
+            )
+            head_status = hr.status_code
+            head_ct = (hr.headers.get("content-type") or "").split(";")[0].strip().lower()
+        except Exception as he:
+            logger.warning(f"[OfflineMapPDF] placeId={place_id} head_failed url={pdf_url} err={he}")
+
+        logger.info(
+            f"[OfflineMapPDF] placeId={place_id} upstream_check method={head_method} status={head_status} content_type={head_ct!r}"
+        )
+
+        if head_status != 200 or (head_ct and "application/pdf" not in head_ct and ".pdf" not in pdf_url.lower()):
+            # Do not attempt guessed/invalid assets; report unavailability cleanly
+            return JSONResponse(status_code=200, content={"available": False, "reason": "no_pdf_found", "parkCode": park_code})
+
+        method = "GET"
+        r = requests.get(
+            pdf_url,
+            stream=True,
+            timeout=20,
+            headers={"User-Agent": "EcoTrails/1.0"},
+            allow_redirects=True,
+        )
+        upstream_status = r.status_code
+        content_type = (r.headers.get("content-type") or "").split(";")[0].strip().lower()
+        content_length = r.headers.get("content-length")
+
+        logger.info(
+            f"[OfflineMapPDF] placeId={place_id} upstream_status={upstream_status} "
+            f"content_type={content_type!r} content_length={content_length!r}"
+        )
+
+        if upstream_status >= 400:
+            # Read a small preview of the body for debugging (HTML error pages, etc.)
+            preview = b""
+            try:
+                preview = next(r.iter_content(chunk_size=4096)) or b""
+            except Exception:
+                pass
+            try:
+                preview_txt = preview.decode("utf-8", errors="replace")
+            except Exception:
+                preview_txt = repr(preview[:200])
+            logger.warning(
+                f"[OfflineMapPDF] placeId={place_id} upstream_error method={method} url={pdf_url} "
+                f"status={upstream_status} content_type={content_type!r} body_preview={preview_txt[:500]!r}"
+            )
+            return JSONResponse(status_code=200, content={"available": False, "reason": "no_pdf_found", "parkCode": park_code})
+
+        if "application/pdf" not in content_type and ".pdf" not in pdf_url.lower():
+            # Try to read a small preview for debugging
+            preview = b""
+            try:
+                preview = next(r.iter_content(chunk_size=2048)) or b""
+            except Exception:
+                pass
+            try:
+                preview_txt = preview.decode("utf-8", errors="replace")
+            except Exception:
+                preview_txt = repr(preview[:200])
+            logger.warning(
+                f"[OfflineMapPDF] placeId={place_id} non_pdf_upstream method={method} url={pdf_url} "
+                f"content_type={content_type!r} body_preview={preview_txt[:500]!r}"
+            )
+            return JSONResponse(status_code=200, content={"available": False, "reason": "no_pdf_found", "parkCode": park_code})
+
+        def _iter_bytes():
+            total = 0
+            for chunk in r.iter_content(chunk_size=1024 * 128):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                yield chunk
+            logger.info(f"[OfflineMapPDF] placeId={place_id} streamed_bytes={total}")
+
+        headers = {
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+            "X-Offline-Map-Available": "true",
+            "X-Offline-Map-ParkCode": (park_code or ""),
+            "X-Offline-Map-Upstream-Url": pdf_url,
+        }
+        return StreamingResponse(_iter_bytes(), media_type="application/pdf", headers=headers)
+    except Exception as e:
+        logger.exception(f"[OfflineMapPDF] placeId={place_id} failed: {e}")
+        return JSONResponse(status_code=200, content={"available": False, "reason": "download_failed", "parkCode": park_code})
+
+
+# ======================================
+# NPS.GOV SCRAPING (STATE + PARK DETAIL)
+# ======================================
+
+@app.get("/api/nps/state/{state_code}")
+async def nps_browse_state(state_code: str, forceRefresh: bool = Query(False)):
+    """
+    Scrape https://www.nps.gov/state/{stateCode}/index.htm and return parks list.
+    Cached for 24h unless forceRefresh=true.
+    """
+    from backend.redis_client import redis_client
+    from backend.nps_scraper import scrape_state_parks
+
+    sc = (state_code or "").strip().lower()
+    cache_key = f"nps:state:{sc}"
+    ttl = 24 * 60 * 60
+
+    if not forceRefresh:
+        cached = redis_client.get(cache_key)
+        if cached:
+            return {**cached, "from_cache": True}
+
+    data = scrape_state_parks(sc)
+    redis_client.set(cache_key, data, ttl=ttl)
+    data["from_cache"] = False
+    return data
+
+
+@app.get("/api/nps/parks/{park_code}")
+async def nps_park_detail(park_code: str, forceRefresh: bool = Query(False)):
+    """
+    Scrape NPS park pages and return a merged park detail object including mapAssets.
+    Cached for 12h unless forceRefresh=true.
+    """
+    from backend.redis_client import redis_client
+    from backend.nps_scraper import scrape_park_detail
+
+    pc = (park_code or "").strip().lower()
+    cache_key = f"nps:park:{pc}"
+    ttl = 12 * 60 * 60
+
+    if not forceRefresh:
+        cached = redis_client.get(cache_key)
+        if cached:
+            return {**cached, "from_cache": True}
+
+    data = scrape_park_detail(pc)
+    redis_client.set(cache_key, data, ttl=ttl)
+    data["from_cache"] = False
+    return data
+
+
+@app.get("/api/nps/parks/{park_code}/offline-map")
+async def nps_park_offline_map(park_code: str, forceRefresh: bool = Query(False)):
+    """
+    Choose best PDF from discovered mapAssets and stream it back.
+    If no PDF found, return 200 JSON {available:false, reason:'no_pdf_found'}.
+    Cached mapAssets (via /api/nps/parks/{parkCode}) for 12h unless forceRefresh=true.
+    """
+    from backend.nps_scraper import pick_best_pdf
+
+    detail = await nps_park_detail(park_code, forceRefresh=forceRefresh)
+    assets = detail.get("mapAssets") or []
+    pc = (park_code or "").strip().lower()
+    pdf_url = pick_best_pdf(assets, pc)
+    if not pdf_url:
+        return {"available": False, "reason": "no_pdf_found", "parkCode": pc}
+
+    import requests
+
+    safe_name = _safe_filename(pc)
+    filename = f"{safe_name}-offline-map.pdf"
+    r = requests.get(pdf_url, stream=True, timeout=20, headers={"User-Agent": "EcoTrails/1.0"}, allow_redirects=True)
+    if r.status_code != 200:
+        return {"available": False, "reason": "no_pdf_found", "parkCode": pc}
+
+    content_type = (r.headers.get("content-type") or "").lower()
+    if "application/pdf" not in content_type:
+        return {"available": False, "reason": "no_pdf_found", "parkCode": pc}
+
+    def _iter_bytes():
+        for chunk in r.iter_content(chunk_size=1024 * 128):
+            if chunk:
+                yield chunk
+
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"', "X-Upstream-Url": pdf_url}
+    return StreamingResponse(_iter_bytes(), media_type="application/pdf", headers=headers)
 
 @app.get("/api/v1/trails/{trail_id}/navigation")
 async def get_trail_navigation(
@@ -3729,17 +4254,21 @@ async def get_trail_route(
     
     # Get trail coordinates from meta_data
     meta = trail.meta_data if isinstance(trail.meta_data, dict) else {}
-    base_lat = meta.get('lat', 37.7749)
-    base_lng = meta.get('lng', -122.4194)
+    base_lat = meta.get('trailhead_lat') or meta.get('lat') or meta.get('latitude')
+    base_lng = meta.get('trailhead_lng') or meta.get('lng') or meta.get('longitude')
     
     # Get place coordinates as fallback
     if trail.place_id:
         place = db.query(Place).filter(Place.id == trail.place_id).first()
         if place and place.location:
             loc = place.location if isinstance(place.location, dict) else {}
-            if 'lat' in loc and base_lat == 37.7749:
-                base_lat = float(loc.get('lat', base_lat))
-                base_lng = float(loc.get('lng', base_lng))
+            if base_lat is None and loc.get('lat') is not None:
+                base_lat = float(loc.get('lat'))
+            if base_lng is None and loc.get('lng') is not None:
+                base_lng = float(loc.get('lng'))
+
+    if base_lat is None or base_lng is None:
+        raise HTTPException(status_code=404, detail="Trail coordinates not available")
     
     # Generate a simulated trail route (in production, this would come from actual GPS data)
     import random
@@ -3754,8 +4283,8 @@ async def get_trail_route(
     num_points = max(10, int(distance_miles * 20))  # ~20 points per mile
     
     coordinates = []
-    current_lat = base_lat
-    current_lng = base_lng
+    current_lat = float(base_lat)
+    current_lng = float(base_lng)
     
     for i in range(num_points):
         # Create a winding path

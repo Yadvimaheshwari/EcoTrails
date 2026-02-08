@@ -7,13 +7,11 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { useHikeStore } from '../store/useHikeStore';
 import { api } from '../config/api';
-import { MediaPickerScreen } from './MediaPickerScreen';
 
 export const EndHikeScreen: React.FC = ({ navigation }: any) => {
   const { currentHike, clearHike } = useHikeStore();
   const [syncing, setSyncing] = useState(true);
   const [syncProgress, setSyncProgress] = useState(0);
-  const [showMediaPicker, setShowMediaPicker] = useState(false);
 
   useEffect(() => {
     syncHike();
@@ -34,7 +32,7 @@ export const EndHikeScreen: React.FC = ({ navigation }: any) => {
           trailId: currentHike.trailId,
           placeId: currentHike.placeId,
           name: currentHike.name,
-          startTime: currentHike.startTime?.toISOString(),
+          startTime: currentHike.startTimeMs ? new Date(currentHike.startTimeMs).toISOString() : undefined,
         });
 
         const hikeId = hikeResponse.data.hike.id;
@@ -75,18 +73,14 @@ export const EndHikeScreen: React.FC = ({ navigation }: any) => {
       }
 
       setSyncing(false);
-      setShowMediaPicker(true);
+      navigation.replace('MediaPicker', { hikeId: currentHike.id });
     } catch (error) {
       console.error('Sync failed:', error);
       // Hike is saved in offline queue, will sync later
       setSyncing(false);
-      setShowMediaPicker(true);
+      navigation.replace('MediaPicker', { hikeId: currentHike.id });
     }
   };
-
-  if (showMediaPicker) {
-    return <MediaPickerScreen navigation={navigation} />;
-  }
 
   const handleViewReport = () => {
     navigation.navigate('PostHikeReport', { hikeId: currentHike.id });

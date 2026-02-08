@@ -6,6 +6,8 @@
 import React from 'react';
 import { openDB, IDBPDatabase } from 'idb';
 import { api } from './api';
+import { OfflineMapDownloader } from './offlineMapDownloader';
+import { offlineMapCache } from './offlineMapCache';
 
 // Types
 export interface OfflinePackStatus {
@@ -36,6 +38,7 @@ export interface RouteData {
 export interface ParkMapData {
   parkId: string;
   parkName: string;
+  // Kept as pdfUrl for backwards compatibility; may be a PDF or an image URL fallback.
   pdfUrl: string;
   sourceName: string;
   downloadedAt: string;
@@ -113,20 +116,47 @@ export class OfflineMapManager {
 
     try {
       // Step 1: Download route GeoJSON (if trailId provided)
+      let boundsForTiles: { north: number; south: number; east: number; west: number } | null = null;
+      let polylineForTiles: Array<{ lat: number; lng: number }> | undefined = undefined;
+
       if (trailId) {
-        await this.downloadRoute(trailId, parkId);
-        await this.updateStatus(parkId, { progress: 33, routeCached: true });
-        onProgress?.(33);
+        const route = await this.downloadRoute(trailId, parkId);
+        boundsForTiles = route?.bounds || null;
+        polylineForTiles = this.extractPolylineFromGeoJSON(route?.geojson);
+        await this.updateStatus(parkId, { progress: 25, routeCached: true });
+        onProgress?.(25);
+      } else {
+        await this.updateStatus(parkId, { progress: 25 });
+        onProgress?.(25);
       }
 
-      // Step 2: Download official PDF map
+      // Step 2: Download OSM tiles for the route bounds (best-effort, works even when PDFs don't exist)
+      if (boundsForTiles) {
+        try {
+          await offlineMapCache.init();
+          const downloader = new OfflineMapDownloader();
+          // Keep a conservative default zoom set for storage size.
+          await downloader.downloadArea(boundsForTiles, [11, 12, 13, 14, 15], trailId || parkId, polylineForTiles);
+          await this.updateStatus(parkId, { progress: 55, tilesCached: true });
+          onProgress?.(55);
+        } catch (e) {
+          console.warn('[OfflineMapManager] Tile download failed (non-fatal):', e);
+          await this.updateStatus(parkId, { progress: 55, tilesCached: false });
+          onProgress?.(55);
+        }
+      } else {
+        await this.updateStatus(parkId, { progress: 55 });
+        onProgress?.(55);
+      }
+
+      // Step 3: Download official PDF map (or image fallback from backend)
       if (includePdf) {
         const pdfCached = await this.downloadPdfMap(parkId);
-        await this.updateStatus(parkId, { progress: 66, pdfCached });
-        onProgress?.(66);
+        await this.updateStatus(parkId, { progress: 85, pdfCached });
+        onProgress?.(85);
       }
 
-      // Step 3: Mark as complete
+      // Step 4: Mark as complete
       await this.updateStatus(parkId, {
         status: 'ready',
         progress: 100,
@@ -141,7 +171,7 @@ export class OfflineMapManager {
     }
   }
 
-  private async downloadRoute(trailId: string, parkId: string): Promise<void> {
+  private async downloadRoute(trailId: string, parkId: string): Promise<RouteData | null> {
     try {
       const response = await api.get(`/api/v1/trails/${trailId}/route`);
       const routeData: RouteData = {
@@ -153,9 +183,33 @@ export class OfflineMapManager {
         downloadedAt: new Date().toISOString(),
       };
       await this.db!.put('routes', routeData);
+      return routeData;
     } catch (error) {
       console.warn('[OfflineMapManager] Route download failed:', error);
       // Non-fatal, continue with PDF
+      return null;
+    }
+  }
+
+  private extractPolylineFromGeoJSON(geojson: any): Array<{ lat: number; lng: number }> | undefined {
+    try {
+      if (!geojson) return undefined;
+      // FeatureCollection → first LineString-ish feature
+      const features = geojson?.features || (geojson?.type === 'Feature' ? [geojson] : []);
+      for (const f of features) {
+        const geom = f?.geometry || f;
+        const t = geom?.type;
+        const coords = geom?.coordinates;
+        if (t === 'LineString' && Array.isArray(coords)) {
+          return coords.map((c: any) => ({ lng: c[0], lat: c[1] }));
+        }
+        if (t === 'MultiLineString' && Array.isArray(coords) && coords[0]) {
+          return coords[0].map((c: any) => ({ lng: c[0], lat: c[1] }));
+        }
+      }
+      return undefined;
+    } catch {
+      return undefined;
     }
   }
 
@@ -163,7 +217,8 @@ export class OfflineMapManager {
     try {
       // Get official map URL
       const response = await api.get(`/api/v1/parks/${parkId}/official-map`);
-      const { pdfUrl, sourceName } = response.data;
+      const pdfUrl = response.data?.pdfUrl || response.data?.mapUrl;
+      const sourceName = response.data?.sourceName;
 
       if (!pdfUrl) {
         console.warn('[OfflineMapManager] No PDF URL for park:', parkId);
@@ -179,7 +234,7 @@ export class OfflineMapManager {
       // Store metadata
       const mapData: ParkMapData = {
         parkId,
-        parkName: response.data.parkName || 'Park',
+        parkName: response.data?.parkName || 'Park',
         pdfUrl,
         sourceName: sourceName || 'Official Map',
         downloadedAt: new Date().toISOString(),

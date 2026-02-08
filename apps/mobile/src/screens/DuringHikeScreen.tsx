@@ -26,6 +26,7 @@ import { Button } from '../components/ui/Button';
 import { useHikeStore } from '../store/useHikeStore';
 import { useWearableStore } from '../store/useWearableStore';
 import { WearableService } from '../services/wearableService';
+import { api } from '../config/api';
 import {
   Discovery,
   DiscoveryWithDistance,
@@ -61,7 +62,7 @@ interface UserLocation {
 }
 
 export const DuringHikeScreen: React.FC = ({ route, navigation }: any) => {
-  const { trailId, trailName, placeId, parkName } = route.params || {};
+  const { trailId, trailName, placeId, parkName, trailLat, trailLng, trailBounds } = route.params || {};
   const { currentHike, addRoutePoint, addSensorBatch, endHike, clearHike } = useHikeStore();
   const { getConnectedDevices } = useWearableStore();
 
@@ -100,6 +101,11 @@ export const DuringHikeScreen: React.FC = ({ route, navigation }: any) => {
   
   // Navigation state
   const [trailheadCoords, setTrailheadCoords] = useState<{lat: number, lng: number} | null>(null);
+
+  // Trail center (must come from selected trail; no hard-coded defaults)
+  const [trailCenter, setTrailCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [isPreparing, setIsPreparing] = useState(true);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   // Refs
   const mapRef = useRef<MapView>(null);
@@ -165,6 +171,29 @@ export const DuringHikeScreen: React.FC = ({ route, navigation }: any) => {
   // =====================
 
   const initializeHike = async () => {
+    // Resolve trail center BEFORE rendering the map
+    const resolvedLat =
+      typeof trailLat === 'number'
+        ? trailLat
+        : typeof currentHike.trailLocation?.lat === 'number'
+          ? currentHike.trailLocation.lat
+          : null;
+    const resolvedLng =
+      typeof trailLng === 'number'
+        ? trailLng
+        : typeof currentHike.trailLocation?.lng === 'number'
+          ? currentHike.trailLocation.lng
+          : null;
+
+    if (resolvedLat === null || resolvedLng === null) {
+      setLocationError('Unable to load trail location. Please try again.');
+      setIsPreparing(false);
+      return;
+    }
+
+    const center = { lat: resolvedLat, lng: resolvedLng };
+    setTrailCenter(center);
+
     // Start location tracking
     await startLocationTracking();
 
@@ -183,13 +212,37 @@ export const DuringHikeScreen: React.FC = ({ route, navigation }: any) => {
     if (devices.length > 0) {
       wearableService.current.startCollection();
     }
+
+    // Center map on the TRAIL (not SF, not user) and zoom-to-bounds when available
+    const b = trailBounds || currentHike.trailBounds;
+    if (b && typeof b.north === 'number') {
+      const latDelta = Math.max(0.005, Math.min(0.5, (b.north - b.south) * 1.2));
+      const lngDelta = Math.max(0.005, Math.min(0.5, (b.east - b.west) * 1.2));
+      mapRef.current?.animateToRegion({
+        latitude: (b.north + b.south) / 2,
+        longitude: (b.east + b.west) / 2,
+        latitudeDelta: latDelta,
+        longitudeDelta: lngDelta,
+      });
+    } else {
+      mapRef.current?.animateToRegion({
+        latitude: center.lat,
+        longitude: center.lng,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
+      });
+    }
+    setIsPreparing(false);
   };
 
   // Load quest items for the trail (Pokemon Go-style find list)
   const loadQuestItems = async () => {
     try {
       // Fetch species hints from backend (uses Gemini)
-      const location = userLocation || { lat: 37.8199, lng: -122.4783 };
+      const location = trailCenter || userLocation;
+      if (!location) {
+        throw new Error('No location available for hints');
+      }
       const hints = await visionService.getSpeciesHints(location);
       
       // Generate quest items from hints
@@ -251,14 +304,6 @@ export const DuringHikeScreen: React.FC = ({ route, navigation }: any) => {
       };
       setUserLocation(initialLoc);
       previousAltitude.current = initialLoc.altitude ?? null;
-
-      // Center map on user
-      mapRef.current?.animateToRegion({
-        latitude: initialLoc.lat,
-        longitude: initialLoc.lng,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
-      });
     } catch (err) {
       console.warn('Failed to get initial location:', err);
     }
@@ -329,8 +374,8 @@ export const DuringHikeScreen: React.FC = ({ route, navigation }: any) => {
 
   const startTimer = () => {
     timerRef.current = setInterval(() => {
-      if (currentHike.startTime) {
-        const elapsed = Math.floor((Date.now() - currentHike.startTime.getTime()) / 1000);
+      if (currentHike.startTimeMs) {
+        const elapsed = Math.floor((Date.now() - currentHike.startTimeMs) / 1000);
         setElapsedTime(elapsed);
       }
     }, 1000);
@@ -637,6 +682,25 @@ export const DuringHikeScreen: React.FC = ({ route, navigation }: any) => {
   };
 
   const getInitialRegion = () => {
+    const b = trailBounds || currentHike.trailBounds;
+    if (b && typeof b.north === 'number') {
+      const latDelta = Math.max(0.005, Math.min(0.5, (b.north - b.south) * 1.2));
+      const lngDelta = Math.max(0.005, Math.min(0.5, (b.east - b.west) * 1.2));
+      return {
+        latitude: (b.north + b.south) / 2,
+        longitude: (b.east + b.west) / 2,
+        latitudeDelta: latDelta,
+        longitudeDelta: lngDelta,
+      };
+    }
+    if (trailCenter) {
+      return {
+        latitude: trailCenter.lat,
+        longitude: trailCenter.lng,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
+      };
+    }
     if (userLocation) {
       return {
         latitude: userLocation.lat,
@@ -645,12 +709,7 @@ export const DuringHikeScreen: React.FC = ({ route, navigation }: any) => {
         longitudeDelta: 0.01,
       };
     }
-    return {
-      latitude: 37.7749,
-      longitude: -122.4194,
-      latitudeDelta: 0.1,
-      longitudeDelta: 0.1,
-    };
+    return null;
   };
 
   // =====================
@@ -658,6 +717,37 @@ export const DuringHikeScreen: React.FC = ({ route, navigation }: any) => {
   // =====================
 
   const revealedDiscoveries = getRevealedDiscoveries();
+
+  if (isPreparing) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <Text variant="h2">Preparing your hike...</Text>
+          <Text variant="body" color="secondary" style={{ marginTop: 8, textAlign: 'center' }}>
+            Loading trail location and setting up tracking.
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (locationError || !trailCenter) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <Text variant="h2">Unable to load trail location</Text>
+          <Text variant="body" color="secondary" style={{ marginTop: 8, textAlign: 'center' }}>
+            Unable to load trail location. Please try again.
+          </Text>
+          <View style={{ marginTop: 16, width: '100%' }}>
+            <Button title="Go Back" onPress={() => navigation.goBack()} size="lg" />
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const initialRegion = getInitialRegion();
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -675,6 +765,11 @@ export const DuringHikeScreen: React.FC = ({ route, navigation }: any) => {
           <Text variant="h3" numberOfLines={1}>
             {trailName || 'Hike in Progress'}
           </Text>
+          {parkName ? (
+            <Text variant="caption" color="secondary" numberOfLines={1}>
+              {parkName}
+            </Text>
+          ) : null}
         </View>
         <View style={styles.headerRight}>
           {wearableStatus.length > 0 && (
@@ -690,12 +785,12 @@ export const DuringHikeScreen: React.FC = ({ route, navigation }: any) => {
         <MapView
           ref={mapRef}
           style={styles.map}
-          provider={PROVIDER_GOOGLE}
-          initialRegion={getInitialRegion()}
+          provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+          initialRegion={initialRegion as any}
           showsUserLocation
           showsMyLocationButton={false}
           showsCompass={false}
-          followsUserLocation
+          followsUserLocation={false}
         >
           {/* Tracked route */}
           {currentHike.routePoints.length > 1 && (
@@ -958,7 +1053,7 @@ export const DuringHikeScreen: React.FC = ({ route, navigation }: any) => {
                 id: currentHike.id,
                 trailName: trailName,
                 parkName: parkName,
-                startTime: currentHike.startTime || new Date(),
+                startTime: currentHike.startTimeMs ? new Date(currentHike.startTimeMs) : new Date(),
                 endTime: new Date(),
                 distanceMiles: distance,
                 elevationGainFeet: elevationGain,

@@ -112,13 +112,22 @@ class NPSService:
         Returns:
             Park data or None
         """
-        parks = await self.search_parks(park_name, limit=1)
+        # Search multiple and choose best by fullName match score (>=50)
+        parks = await self.search_parks(park_name, limit=8)
         if parks:
-            park = parks[0]
-            # Get alerts for this park
-            if park.get("id"):
-                alerts = await self.get_park_alerts(park["id"])
+            from backend.nps_matcher import select_best_nps_park
+
+            sel = select_best_nps_park(park_name, parks, min_score=50)
+            if not sel:
+                return None
+            # Return the selected park dict (enriched with alerts)
+            park = next((p for p in parks if (p.get("id") or "").lower() == sel.park_code), parks[0])
+            if sel.park_code:
+                alerts = await self.get_park_alerts(sel.park_code)
                 park["alerts"] = alerts
+            park["selectedParkCode"] = sel.park_code
+            park["selectedFullName"] = sel.full_name
+            park["selectedScore"] = sel.score
             return park
         return None
 

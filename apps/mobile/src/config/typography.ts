@@ -1,4 +1,4 @@
-import { typography as designTypography } from '@ecotrails/shared/design';
+import { typography as designTypography } from '../shared/design';
 
 export const typography = {
   fontFamily: {

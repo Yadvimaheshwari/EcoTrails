@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { api } from '@/lib/api';
 import {
@@ -52,6 +52,7 @@ const NEARBY_RADIUS_METERS = 100;
 export default function HikeModeLivePage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const hikeId = params.id as string;
 
   // Core state
@@ -85,7 +86,8 @@ export default function HikeModeLivePage() {
   const [mapLayer, setMapLayer] = useState<'topo' | 'satellite' | 'terrain'>('topo');
   const [isPaused, setIsPaused] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [trailCenter, setTrailCenter] = useState<{ lat: number; lng: number }>({ lat: 0, lng: 0 });
+  const [trailCenter, setTrailCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [trailBounds, setTrailBounds] = useState<{ north: number; south: number; east: number; west: number } | null>(null);
   
   // Camera Discovery state
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -129,21 +131,64 @@ export default function HikeModeLivePage() {
       const parkId = hike.place_id || hike.trail?.place_id || '';
       const parkName = hike.place?.name || hike.park_name || '';
 
-      // Extract trail center coordinates
-      let centerLat = 37.8914; // Default to Muir Woods
-      let centerLng = -122.5811;
-      
-      // Try to get coordinates from trail meta_data
-      if (hike.trail?.meta_data?.lat) {
-        centerLat = parseFloat(hike.trail.meta_data.lat);
-        centerLng = parseFloat(hike.trail.meta_data.lng);
-      } else if (hike.place?.location?.lat) {
-        centerLat = parseFloat(hike.place.location.lat);
-        centerLng = parseFloat(hike.place.location.lng);
+      // Extract trail center coordinates (NO hard-coded defaults).
+      const qpLatRaw = searchParams?.get('lat');
+      const qpLngRaw = searchParams?.get('lng');
+      const qpLat = qpLatRaw ? Number(qpLatRaw) : NaN;
+      const qpLng = qpLngRaw ? Number(qpLngRaw) : NaN;
+
+      let centerLat: number | null = Number.isFinite(qpLat) ? qpLat : null;
+      let centerLng: number | null = Number.isFinite(qpLng) ? qpLng : null;
+
+      // Fallbacks (for deep-links) — still no hard-coded city:
+      if ((centerLat === null || centerLng === null) && hike.trail?.meta_data) {
+        const m = hike.trail.meta_data;
+        const mLat = m.trailhead_lat ?? m.lat ?? m.latitude;
+        const mLng = m.trailhead_lng ?? m.lng ?? m.longitude;
+        const pLat = mLat !== undefined ? Number(mLat) : NaN;
+        const pLng = mLng !== undefined ? Number(mLng) : NaN;
+        if (Number.isFinite(pLat) && Number.isFinite(pLng)) {
+          centerLat = pLat;
+          centerLng = pLng;
+        }
       }
-      
+      if ((centerLat === null || centerLng === null) && hike.place?.location) {
+        const loc = hike.place.location;
+        const pLat = Number(loc?.lat ?? loc?.latitude);
+        const pLng = Number(loc?.lng ?? loc?.longitude);
+        if (Number.isFinite(pLat) && Number.isFinite(pLng)) {
+          centerLat = pLat;
+          centerLng = pLng;
+        }
+      }
+
+      if (centerLat === null || centerLng === null) {
+        setError('Unable to load trail location. Please try again.');
+        setState(prev => ({ ...prev, status: 'loading' }));
+        return;
+      }
+
       console.log('[HikeMode] Trail center:', centerLat, centerLng);
       setTrailCenter({ lat: centerLat, lng: centerLng });
+
+      // Load trail bounds (for zoom-to-trail) if available
+      if (trailId) {
+        try {
+          const routeRes = await api.get(`/api/v1/trails/${trailId}/route`);
+          const bounds = routeRes.data?.bounds;
+          if (
+            bounds &&
+            typeof bounds.north === 'number' &&
+            typeof bounds.south === 'number' &&
+            typeof bounds.east === 'number' &&
+            typeof bounds.west === 'number'
+          ) {
+            setTrailBounds(bounds);
+          }
+        } catch (e) {
+          // Non-fatal
+        }
+      }
 
       // Load navigation data for Google Maps
       if (trailId) {
@@ -638,18 +683,30 @@ export default function HikeModeLivePage() {
   return (
     <div className="fixed inset-0 bg-background overflow-hidden">
       {/* Full-screen Map */}
-      <HikeMapCanvas
-        trailCenter={trailCenter}
-        currentLocation={state.currentLocation}
-        routePoints={state.routePoints}
-        discoveryNodes={getNodesWithStatus()}
-        captures={state.captures}
-        mapLayer={mapLayer}
-        onNodeClick={handleOpenCapture}
-        onCenterMe={() => {
-          // Map will handle centering
-        }}
-      />
+      {trailCenter ? (
+        <HikeMapCanvas
+          trailCenter={trailCenter}
+          trailBounds={trailBounds}
+          currentLocation={state.currentLocation}
+          routePoints={state.routePoints}
+          discoveryNodes={getNodesWithStatus()}
+          captures={state.captures}
+          mapLayer={mapLayer}
+          onNodeClick={handleOpenCapture}
+          onCenterMe={() => {
+            // Map will handle centering
+          }}
+        />
+      ) : (
+        <div className="absolute inset-0 bg-gradient-to-b from-mossGreen/20 to-pineGreen/30 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-16 h-16 rounded-full bg-white/80 flex items-center justify-center mb-4 mx-auto animate-pulse">
+              <span className="text-3xl">🥾</span>
+            </div>
+            <p className="text-pineGreen font-medium">Preparing your hike...</p>
+          </div>
+        </div>
+      )}
 
       {/* Top Left: Finds Pill */}
       <button

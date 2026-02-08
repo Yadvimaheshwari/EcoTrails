@@ -1,4 +1,4 @@
-import { colors as designColors } from '@ecotrails/shared/design';
+import { colors as designColors } from '../shared/design';
 
 export const colors = {
   ...designColors,

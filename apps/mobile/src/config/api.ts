@@ -8,9 +8,17 @@ import Constants from 'expo-constants';
 const DEV_MACHINE_IP =
   Constants.expoConfig?.hostUri?.split(':')[0] ?? '10.0.0.143';
 
-const API_BASE_URL = __DEV__
-  ? `http://${DEV_MACHINE_IP}:8000`
-  : 'https://api.ecotrails.app';
+const ENV_BASE =
+  (process.env.EXPO_PUBLIC_API_BASE_URL as string | undefined) ||
+  (process.env.EXPO_PUBLIC_API_URL as string | undefined) ||
+  (process.env.NEXT_PUBLIC_API_BASE_URL as string | undefined) ||
+  (process.env.NEXT_PUBLIC_API_URL as string | undefined);
+
+export const API_BASE_URL = ENV_BASE
+  ? ENV_BASE
+  : __DEV__
+    ? `http://${DEV_MACHINE_IP}:8000`
+    : 'https://api.ecotrails.app';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -49,3 +57,27 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// --- Convenience API helpers (used by screens) ---
+export async function getJournalEntries(params?: { hikeId?: string; entryType?: string; limit?: number }) {
+  const limit = params?.limit ?? 50;
+  const queryParams: Record<string, string | number> = { limit };
+  if (params?.hikeId) queryParams.hike_id = params.hikeId;
+  if (params?.entryType) queryParams.entry_type = params.entryType;
+  return api.get('/api/v1/journal', { params: queryParams });
+}
+
+/**
+ * Update journal metadata. FastAPI expects the raw metadata dict as the JSON body for this endpoint.
+ */
+export async function updateJournalEntryMetadata(entryId: string, metadata: Record<string, any>) {
+  return api.put(`/api/v1/journal/${entryId}`, metadata);
+}
+
+export async function searchPlaces(query: string, limit = 20) {
+  return api.get('/api/v1/places/search', { params: { query, limit } });
+}
+
+export async function planTrip(placeId: string, visitDate: string) {
+  return api.post(`/api/v1/places/${placeId}/plan-trip`, null, { params: { visit_date: visitDate } });
+}

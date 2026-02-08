@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, TextInput, TouchableOpacity } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker } from 'react-native-maps';
+import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../config/colors';
 import { Text } from '../components/ui/Text';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { api } from '../config/api';
+import { Screen } from '../ui';
+import { Title, BodyText } from '../ui';
 
 interface Place {
   id: string;
@@ -30,25 +32,81 @@ export const ExploreScreen: React.FC = ({ navigation }: any) => {
   const [nearbyPlaces, setNearbyPlaces] = useState<Place[]>([]);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
+  const [stateCode, setStateCode] = useState<string>('ca');
+  const [stateParks, setStateParks] = useState<Array<{ name: string; parkCode: string; canonicalUrl: string }>>([]);
+  const [loadingState, setLoadingState] = useState(false);
+  const [requestingLocation, setRequestingLocation] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   useEffect(() => {
     loadNearbyPlaces();
+    loadStateParks('ca');
   }, []);
 
-  const loadNearbyPlaces = async () => {
-    // Mock location for now
-    const mockLocation = { lat: 37.7749, lng: -122.4194 };
-    setUserLocation(mockLocation);
-    
+  const loadStateParks = async (sc: string) => {
+    setLoadingState(true);
     try {
+      const res = await api.get(`/api/nps/state/${sc}`);
+      const parks = res.data?.parks || [];
+      setStateParks(
+        (Array.isArray(parks) ? parks : []).map((p: any) => ({
+          name: p?.name,
+          parkCode: p?.parkCode,
+          canonicalUrl: p?.canonicalUrl || p?.url,
+        }))
+      );
+    } catch (e) {
+      setStateParks([]);
+    } finally {
+      setLoadingState(false);
+    }
+  };
+
+  const handleStateChange = (sc: string) => {
+    setStateCode(sc);
+    loadStateParks(sc);
+  };
+
+  const handleStateParkSelect = async (park: { name: string; parkCode: string }) => {
+    // Convert NPS listing entry -> our PlaceDetail flow by searching our places index for the park name.
+    try {
+      const resp = await api.get('/api/v1/places/search', { params: { query: park.name, limit: 5 } });
+      const places = resp.data?.places || [];
+      const match = Array.isArray(places) && places.length > 0 ? places[0] : null;
+      if (match?.id) {
+        navigation.navigate('PlaceDetail', { placeId: match.id });
+        return;
+      }
+    } catch {}
+  };
+
+  const loadNearbyPlaces = async () => {
+    try {
+      setRequestingLocation(true);
+      setLocationError(null);
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setLocationError('Location permission is required to show nearby parks.');
+        setNearbyPlaces([]);
+        return;
+      }
+
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      setUserLocation(loc);
+
       const response = await api.get('/api/v1/places/nearby', {
-        params: { lat: mockLocation.lat, lng: mockLocation.lng, radius: 5000, limit: 10 },
+        // Match web defaults: radius=50 (backend interprets this consistently across clients)
+        params: { lat: loc.lat, lng: loc.lng, radius: 50, limit: 10 },
       });
       setNearbyPlaces(response.data.places || []);
     } catch (error: any) {
       console.error('Failed to load nearby places:', error);
       // Set empty array on error to prevent crashes
       setNearbyPlaces([]);
+      setLocationError('Unable to load your location. Please try again.');
+    } finally {
+      setRequestingLocation(false);
     }
   };
 
@@ -67,29 +125,14 @@ export const ExploreScreen: React.FC = ({ navigation }: any) => {
   };
 
   const handlePlaceSelect = async (place: Place) => {
-    // Navigate to a place detail screen or show trails for this place
-    // For now, we'll navigate to TrailDetail but we need to get trails first
-    try {
-      // Get place details which includes trails
-      const response = await api.get(`/api/v1/places/${place.id}`);
-      const trails = response.data.trails || [];
-      if (trails.length > 0) {
-        navigation.navigate('TrailDetail', { trailId: trails[0].id, placeId: place.id });
-      } else {
-        // If no trails, just show the place
-        navigation.navigate('PlaceDetail', { placeId: place.id });
-      }
-    } catch (error) {
-      console.error('Error loading park trails:', error);
-      // Fallback: navigate to place detail
-      navigation.navigate('PlaceDetail', { placeId: place.id });
-    }
+    // Web parity: Explore always takes you to the park/place page; trail selection happens there.
+    navigation.navigate('PlaceDetail', { placeId: place.id });
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <Screen scroll={false} style={styles.container} padding={0}>
       <View style={styles.header}>
-        <Text variant="h2">Where are you exploring today?</Text>
+        <Title level={2}>Where are you exploring today?</Title>
         <View style={styles.searchContainer}>
           <Ionicons name="search-outline" size={20} color={colors.textTertiary} style={styles.searchIcon} />
           <TextInput
@@ -104,6 +147,16 @@ export const ExploreScreen: React.FC = ({ navigation }: any) => {
       </View>
 
       <ScrollView style={styles.content}>
+        {requestingLocation ? (
+          <BodyText muted style={{ paddingHorizontal: 20, marginTop: 6, fontSize: 12 }}>
+            Requesting location…
+          </BodyText>
+        ) : locationError ? (
+          <BodyText muted style={{ paddingHorizontal: 20, marginTop: 6, fontSize: 12 }}>
+            {locationError}
+          </BodyText>
+        ) : null}
+
         {userLocation && (
           <View style={styles.mapContainer}>
             <MapView
@@ -151,6 +204,46 @@ export const ExploreScreen: React.FC = ({ navigation }: any) => {
           </ScrollView>
         </View>
 
+        {/* State-wise park browsing (web parity requirement) */}
+        <View style={styles.section}>
+          <View style={{ paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text variant="h3">Browse by state</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {['ca', 'co', 'ut', 'az', 'wa'].map((sc) => (
+                <TouchableOpacity key={sc} onPress={() => handleStateChange(sc)}>
+                  <Text variant="caption" style={{ color: stateCode === sc ? colors.primary : colors.textTertiary, fontWeight: '600' }}>
+                    {sc.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+          {loadingState ? (
+            <Text variant="caption" color="secondary" style={{ paddingHorizontal: 20, marginTop: 10 }}>
+              Loading parks…
+            </Text>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
+              {stateParks.slice(0, 20).map((p, index) => (
+                <TouchableOpacity
+                  key={`${p.parkCode || p.name}-${index}`}
+                  style={styles.placeCard}
+                  onPress={() => handleStateParkSelect({ name: p.name, parkCode: p.parkCode })}
+                >
+                  <Card style={styles.card}>
+                    <Text variant="h3" numberOfLines={2}>
+                      {p.name}
+                    </Text>
+                    <Text variant="caption" color="secondary" style={styles.placeType}>
+                      NPS • {String(p.parkCode || '').toUpperCase()}
+                    </Text>
+                  </Card>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+
         {places.length > 0 && (
           <View style={styles.section}>
             <Text variant="h3" style={styles.sectionTitle}>Search Results</Text>
@@ -168,7 +261,7 @@ export const ExploreScreen: React.FC = ({ navigation }: any) => {
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 };
 

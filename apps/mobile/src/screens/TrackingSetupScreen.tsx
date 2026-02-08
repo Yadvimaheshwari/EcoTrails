@@ -16,6 +16,7 @@ export const TrackingSetupScreen: React.FC = ({ navigation }: any) => {
   const { getConnectedDevices } = useWearableStore();
   const [connectedDevices, setConnectedDevices] = useState<string[]>([]);
   const [ecodroidConnected, setEcodroidConnected] = useState(false);
+  const enableLegacyScreens = process.env.EXPO_PUBLIC_ENABLE_LEGACY_SCREENS === '1';
 
   useEffect(() => {
     loadConnectedDevices();
@@ -37,16 +38,25 @@ export const TrackingSetupScreen: React.FC = ({ navigation }: any) => {
   const wearableConnected = connectedDevices.length > 0;
 
   const handleConnectWearable = () => {
+    if (!enableLegacyScreens) return;
     navigation.navigate('DeviceManager');
   };
 
   const handleConnectEcoDroid = () => {
     // Placeholder for EcoDroid connection
+    if (!enableLegacyScreens) return;
     navigation.navigate('EcoDroidConnect');
   };
 
   const handleStart = () => {
-    navigation.navigate('DuringHike');
+    navigation.navigate('DuringHike', {
+      trailId: currentHike.trailId,
+      trailName: currentHike.name,
+      placeId: currentHike.placeId,
+      trailLat: currentHike.trailLocation?.lat,
+      trailLng: currentHike.trailLocation?.lng,
+      trailBounds: currentHike.trailBounds,
+    });
   };
 
   return (

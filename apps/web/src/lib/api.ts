@@ -1,7 +1,10 @@
 import axios from 'axios';
 import type { Hike, JournalEntry, Media } from '@/types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  'http://localhost:8000';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -9,6 +12,22 @@ export const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+});
+
+// Always attach auth token in browser (defensive against components calling API before AuthContext sets defaults)
+api.interceptors.request.use((config) => {
+  try {
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('auth_token');
+      if (token && !config.headers?.Authorization) {
+        config.headers = config.headers || {};
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return config;
 });
 
 export function setAuthToken(token: string | null) {

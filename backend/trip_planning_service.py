@@ -8,7 +8,6 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from backend.models import JournalEntry, Place, User
 from google import genai
-from google.genai import types
 
 logger = logging.getLogger("EcoAtlas.TripPlanning")
 
@@ -31,7 +30,8 @@ async def generate_trip_plan(
         Dict with trip plan including checklist and packing list
     """
     try:
-        client = genai.Client(api_key=api_key)
+        # Use explicit v1alpha to match the rest of the backend and avoid auth-mode ambiguity.
+        client = genai.Client(api_key=api_key, http_options={"api_version": "v1alpha"})
         
         # Build context from place data
         location_info = ""

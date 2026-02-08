@@ -28,7 +28,8 @@ export class WearableService {
     const { addSensorBatch, currentHike } = useHikeStore.getState();
     const devices = getConnectedDevices();
 
-    if (devices.length === 0 || !currentHike.id) {
+    const hikeId = currentHike.id;
+    if (devices.length === 0 || !hikeId) {
       return;
     }
 
@@ -41,7 +42,7 @@ export class WearableService {
         
         // Sync to backend if online
         try {
-          await this.syncToBackend(currentHike.id, data);
+          await this.syncToBackend(hikeId, data);
         } catch (error) {
           console.error('Failed to sync wearable data:', error);
           // Data is already in local store, will sync later

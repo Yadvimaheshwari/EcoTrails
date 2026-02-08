@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius } from '@ecotrails/shared/design';
+import { colors, spacing } from '../../shared/design';
 import { Text } from './Text';
 
 interface BottomNavItem {
@@ -51,21 +51,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.fogWhite,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    paddingVertical: spacing[2],
-    paddingBottom: spacing[2],
+    paddingVertical: spacing.sm,
+    paddingBottom: spacing.sm,
     height: 64,
   },
   item: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing[2],
+    paddingVertical: spacing.sm,
   },
   itemActive: {
     // Subtle highlight for active state
   },
   label: {
-    marginTop: spacing[1],
+    marginTop: spacing.xs,
     color: colors.textTertiary,
     fontFamily: 'Inter_500Medium',
   },

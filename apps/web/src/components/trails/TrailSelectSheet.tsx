@@ -14,6 +14,7 @@ import {
   Clock, 
   MapPin, 
   Download,
+  Loader2,
   AlertTriangle,
   Info
 } from 'lucide-react';
@@ -30,6 +31,8 @@ interface TrailSelectSheetProps {
   onDownloadOffline?: () => void;
   loading?: boolean;
   offlineEnabled?: boolean;
+  offlineDownloadLoading?: boolean;
+  offlineDisabledReason?: string;
 }
 
 // Difficulty badge colors
@@ -51,6 +54,8 @@ export function TrailSelectSheet({
   onDownloadOffline,
   loading = false,
   offlineEnabled = false,
+  offlineDownloadLoading = false,
+  offlineDisabledReason,
 }: TrailSelectSheetProps) {
   const sheetRef = useRef<HTMLDivElement>(null);
   const [touchStartY, setTouchStartY] = useState(0);
@@ -248,11 +253,21 @@ export function TrailSelectSheet({
             {/* Download Offline Button */}
             <button
               onClick={onDownloadOffline}
-              disabled={!offlineEnabled}
+              disabled={!offlineEnabled || offlineDownloadLoading}
               className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-slate-200 text-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
-              title={offlineEnabled ? 'Download for offline use' : 'Coming soon'}
+              title={
+                offlineDownloadLoading
+                  ? 'Downloading…'
+                  : offlineEnabled
+                    ? 'Download offline PDF map'
+                    : offlineDisabledReason || 'Offline map unavailable'
+              }
             >
-              <Download className="w-5 h-5" />
+              {offlineDownloadLoading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Download className="w-5 h-5" />
+              )}
             </button>
 
             {/* Start Hike Button */}
@@ -279,7 +294,7 @@ export function TrailSelectSheet({
           {!offlineEnabled && (
             <p className="text-xs text-slate-400 text-center mt-2 flex items-center justify-center gap-1">
               <Info className="w-3 h-3" />
-              Offline maps coming soon
+              {offlineDisabledReason || 'Official PDF not available'}
             </p>
           )}
         </div>

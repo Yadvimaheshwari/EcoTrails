@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { GoogleMap, LoadScript, Marker, Polyline, InfoWindow } from '@react-google-maps/api';
+import { GoogleMap, Marker, Polyline, InfoWindow } from '@react-google-maps/api';
 import { offlineMapCache } from '@/lib/offlineMapCache';
 import { OfflineMapDownloader } from '@/lib/offlineMapDownloader';
 import { useOfflineDetection } from '@/hooks/useOfflineDetection';
 import { MarauderMapViewer } from '@/components/MarauderMapViewer';
 import { LeafletOfflineMap } from '@/components/LeafletOfflineMap';
+import { loadGoogleMaps } from '@/lib/googleMapsLoader';
 import { format } from 'date-fns';
 
 interface MapViewerProps {
@@ -42,6 +43,8 @@ export function MapViewer({
 }: MapViewerProps) {
   const { isOffline, lastOnline } = useOfflineDetection();
   const [mapMode, setMapMode] = useState<MapMode>('online');
+  const [isGoogleReady, setIsGoogleReady] = useState(false);
+  const [googleLoadError, setGoogleLoadError] = useState<string | null>(null);
   const [isDownloaded, setIsDownloaded] = useState(false);
   const [downloadedAt, setDownloadedAt] = useState<number | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -207,6 +210,22 @@ export function MapViewer({
   // If no Google Maps API key, fallback to offline mode
   const effectiveMode = !googleMapsApiKey ? 'offline' : mapMode;
 
+  // Load Google Maps JS when online mode is active
+  useEffect(() => {
+    setIsGoogleReady(false);
+    setGoogleLoadError(null);
+
+    if (effectiveMode !== 'online' || !googleMapsApiKey) return;
+
+    const libs = GOOGLE_MAPS_LIBRARIES.map(String);
+    loadGoogleMaps(googleMapsApiKey, libs)
+      .then(() => setIsGoogleReady(true))
+      .catch((err: any) => {
+        console.error('[MapViewer] Failed to load Google Maps:', err);
+        setGoogleLoadError(err?.message || 'Failed to load Google Maps');
+      });
+  }, [effectiveMode, googleMapsApiKey]);
+
   return (
     <div className="space-y-4">
       {/* Mode Toggle and Status */}
@@ -365,10 +384,31 @@ export function MapViewer({
           metadata={metadata}
         />
       ) : effectiveMode === 'online' && googleMapsApiKey ? (
-        <LoadScript
-          googleMapsApiKey={googleMapsApiKey}
-          libraries={GOOGLE_MAPS_LIBRARIES}
-        >
+        googleLoadError ? (
+          <div className="space-y-3">
+            <div className="p-4 rounded-2xl text-sm" style={{ backgroundColor: '#FFF8F0', border: '1px solid #F4A34040', color: '#5F6F6A' }}>
+              <div className="font-medium">Google Maps failed to load — showing fallback map.</div>
+              <div className="text-xs mt-1">Error: {googleLoadError}</div>
+            </div>
+            <LeafletOfflineMap
+              center={getMapCenter()}
+              zoom={13}
+              polyline={polyline}
+              pois={pois}
+              boundingBox={boundingBox}
+              height="600px"
+              interactive={true}
+              className="rounded-2xl overflow-hidden"
+            />
+          </div>
+        ) : !isGoogleReady ? (
+          <div className="w-full h-[600px] rounded-2xl overflow-hidden flex items-center justify-center" style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3' }}>
+            <div className="text-center">
+              <div className="w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-sm text-textSecondary">Loading Google Maps...</p>
+            </div>
+          </div>
+        ) : (
           <GoogleMap
             mapContainerStyle={{
               width: '100%',
@@ -427,7 +467,7 @@ export function MapViewer({
               </InfoWindow>
             )}
           </GoogleMap>
-        </LoadScript>
+        )
       ) : (
         <LeafletOfflineMap
           center={getMapCenter()}

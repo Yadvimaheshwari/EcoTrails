@@ -1,6 +1,6 @@
 import React from 'react';
-import { View, StyleSheet, TouchableOpacity, ViewStyle, TextStyle } from 'react-native';
-import { colors, spacing, borderRadius } from '@ecotrails/shared/design';
+import { StyleProp, View, StyleSheet, TouchableOpacity, ViewStyle, TextStyle } from 'react-native';
+import { colors, spacing, borderRadius } from '../../shared/design';
 import { Text } from './Text';
 
 interface ChipProps {
@@ -8,7 +8,7 @@ interface ChipProps {
   variant?: 'default' | 'primary' | 'accent' | 'success' | 'warning' | 'error';
   size?: 'sm' | 'md';
   onPress?: () => void;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 }
 
 export const Chip: React.FC<ChipProps> = ({
@@ -20,18 +20,9 @@ export const Chip: React.FC<ChipProps> = ({
 }) => {
   const Component = onPress ? TouchableOpacity : View;
   
-  const chipStyle: ViewStyle[] = [
-    styles.chip,
-    styles[`chip_${variant}`],
-    styles[`chip_${size}`],
-    style,
-  ];
+  const chipStyle: StyleProp<ViewStyle> = [styles.chip, styles[`chip_${variant}`], styles[`chip_${size}`], style];
 
-  const textStyle: TextStyle[] = [
-    styles.text,
-    styles[`text_${variant}`],
-    styles[`text_${size}`],
-  ];
+  const textStyle: StyleProp<TextStyle> = [styles.text, styles[`text_${variant}`], styles[`text_${size}`]];
 
   return (
     <Component style={chipStyle} onPress={onPress} activeOpacity={0.7}>
@@ -68,12 +59,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.error,
   },
   chip_sm: {
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[1],
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
   },
   chip_md: {
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[2],
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
   },
   text: {
     fontFamily: 'Inter_500Medium',
