@@ -104,6 +104,7 @@ export const DuringHikeScreen: React.FC = ({ route, navigation }: any) => {
 
   // Trail center (must come from selected trail; no hard-coded defaults)
   const [trailCenter, setTrailCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [trailRoute, setTrailRoute] = useState<Array<{ latitude: number; longitude: number }>>([]);
   const [isPreparing, setIsPreparing] = useState(true);
   const [locationError, setLocationError] = useState<string | null>(null);
 
