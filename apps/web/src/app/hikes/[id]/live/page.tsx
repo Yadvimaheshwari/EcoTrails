@@ -88,6 +88,7 @@ export default function HikeModeLivePage() {
   const [error, setError] = useState<string | null>(null);
   const [trailCenter, setTrailCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [trailBounds, setTrailBounds] = useState<{ north: number; south: number; east: number; west: number } | null>(null);
+  const [trailRoute, setTrailRoute] = useState<Array<[number, number]>>([]);  // [lng, lat] GeoJSON format
   
   // Camera Discovery state
   const [cameraOpen, setCameraOpen] = useState(false);
