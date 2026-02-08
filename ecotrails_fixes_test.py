@@ -203,15 +203,13 @@ class EcoTrailsFixesTester:
         """Test video generation endpoint graceful handling"""
         try:
             # Test with a mock video generation request
+            hike_id = "test_hike_123"
             payload = {
-                "hike_id": "test_hike_123",
-                "options": {
-                    "duration": 10,
-                    "style": "cinematic"
-                }
+                "duration": 10,
+                "style": "cinematic"
             }
             
-            response = self.session.post(f"{self.base_url}/api/v1/video/generate", 
+            response = self.session.post(f"{self.base_url}/api/v1/hikes/{hike_id}/generate-video", 
                                        json=payload, timeout=15)
             
             if response.status_code == 200:
