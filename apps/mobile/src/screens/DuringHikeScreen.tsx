@@ -807,7 +807,17 @@ export const DuringHikeScreen: React.FC = ({ route, navigation }: any) => {
           showsCompass={false}
           followsUserLocation={false}
         >
-          {/* Tracked route */}
+          {/* Pre-defined trail route (dashed line) */}
+          {trailRoute.length > 1 && (
+            <Polyline
+              coordinates={trailRoute}
+              strokeColor="#FF6B35"
+              strokeWidth={5}
+              lineDashPattern={[10, 10]}
+            />
+          )}
+          
+          {/* User's tracked route */}
           {currentHike.routePoints.length > 1 && (
             <Polyline
               coordinates={currentHike.routePoints.map((p) => ({
