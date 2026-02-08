@@ -52,6 +52,33 @@ EcoTrails is a comprehensive hiking companion app for national and state parks i
 - Species identification from photos
 - Voice narration support
 
+## Mobile App Status (React Native/Expo)
+
+### Tested & Working ✅
+| Feature | Status |
+|---------|--------|
+| API Configuration | ✅ Connects to backend |
+| Explore Screen | ✅ Park search, nearby places, state browsing |
+| Place Details | ✅ Trails, weather, alerts, offline maps |
+| Offline Maps | ✅ PDF download and storage |
+| During Hike | ✅ Trail route display, discovery gamification |
+| Journal | ✅ Trip planning, hike logging |
+| Discovery Service | ✅ Backend integration enabled |
+| Wearable Service | ⚠️ Structure ready, uses simulated data |
+
+### Mobile-Specific Features
+- **Camera Discovery**: Live camera for wildlife/flora identification
+- **Offline Capabilities**: PDF maps stored locally
+- **Background Location**: GPS tracking during hikes
+- **Haptic Feedback**: Badge and discovery notifications
+- **Platform Permissions**: Location, Camera, Photo Library configured
+
+### Key Files
+- `/app/apps/mobile/src/screens/` - All screen components
+- `/app/apps/mobile/src/services/` - Discovery, offline maps, wearables
+- `/app/apps/mobile/src/store/` - Zustand state management
+- `/app/apps/mobile/MOBILE_QA_TEST_PLAN.md` - Manual testing checklist
+
 ## What's Been Implemented (Feb 2026)
 
 ### Session 1 Fixes
