@@ -108,7 +108,6 @@ export default function App() {
       }}
     >
       <StatusBar style="dark" />
-      <DebugBanner />
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
@@ -145,6 +144,8 @@ export default function App() {
           </>
         )}
       </Stack.Navigator>
+      {/* DebugBanner must be inside NavigationContainer but rendered after Stack.Navigator */}
+      <DebugBanner />
     </NavigationContainer>
   );
 }
