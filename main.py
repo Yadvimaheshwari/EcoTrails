@@ -4004,7 +4004,7 @@ async def download_place_offline_map_pdf(
         if nps_api_key and place.name:
             import requests
             
-            # First try to derive park code from name
+            # First try to derive park code from our local name mapping (faster, more reliable)
             place_name_lower = place.name.lower()
             derived_code = None
             for park_name, code in PARK_CODE_MAP.items():
@@ -4013,11 +4013,40 @@ async def download_place_offline_map_pdf(
                     break
             
             if derived_code:
-                # Verify the derived code is valid
-                resp = requests.get(
-                    "https://developer.nps.gov/api/v1/parks",
-                    params={"parkCode": derived_code, "api_key": nps_api_key},
-                    timeout=10,
+                # Verify the derived code is valid by checking NPS API
+                try:
+                    resp = requests.get(
+                        "https://developer.nps.gov/api/v1/parks",
+                        params={"parkCode": derived_code, "api_key": nps_api_key},
+                        timeout=5,  # Shorter timeout for verification
+                    )
+                    if resp.status_code == 200:
+                        parks = resp.json().get("data", []) or []
+                        if parks:
+                            park_code = derived_code
+                            full_name = parks[0].get("fullName", place.name)
+                            match_score = 100
+                            logger.info(f"[OfflineMapPDF] placeId={place_id} derived parkCode='{park_code}' from local map")
+                except Exception as e:
+                    # NPS verification failed, but still use our derived code
+                    park_code = derived_code
+                    full_name = place.name
+                    match_score = 90
+                    logger.info(f"[OfflineMapPDF] placeId={place_id} using derived parkCode='{park_code}' (NPS verify failed: {e})")
+            
+            # Fallback to NPS search if local match didn't work
+            if not park_code:
+                try:
+                    resp = requests.get(
+                        "https://developer.nps.gov/api/v1/parks",
+                        params={"q": place.name, "limit": 20, "api_key": nps_api_key},
+                        timeout=10,
+                    )
+                    if resp.status_code == 200:
+                        parks = resp.json().get("data", []) or []
+                        park_code, full_name, match_score = _select_best_nps_park_code(place.name, parks)
+                except Exception as e:
+                    logger.info(f"[OfflineMapPDF] placeId={place_id} NPS API search failed: {e}")
                 )
                 if resp.status_code == 200:
                     parks = resp.json().get("data", []) or []
