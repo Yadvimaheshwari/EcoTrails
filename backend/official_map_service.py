@@ -22,11 +22,11 @@ logger = logging.getLogger(__name__)
 # Curated list of NPS park maps
 # These are direct links to official NPS PDF maps
 NPS_MAP_DATABASE: Dict[str, Dict[str, str]] = {
-    # California - Yosemite
+    # California - Yosemite (uses campground map as main park map not available)
     "yosemite": {
-        "map_url": "https://www.nps.gov/yose/planyourvisit/upload/YOSEmap1.pdf",
+        "map_url": "https://www.nps.gov/yose/planyourvisit/upload/yosemitecampgroundmap2013.pdf",
         "source": "NPS Yosemite",
-        "map_type": "park_map"
+        "map_type": "campground_map"
     },
     "yosemite": {
         "map_url": "https://www.nps.gov/yose/planyourvisit/upload/YOSEmap1.pdf",
