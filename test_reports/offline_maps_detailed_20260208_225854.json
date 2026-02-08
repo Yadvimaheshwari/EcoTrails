@@ -1,0 +1,56 @@
+{
+  "summary": {
+    "total_tests": 4,
+    "passed_tests": 4,
+    "success_rate": 1.0,
+    "backend_url": "https://ec0aa055-ea47-470e-bc88-1706654d1a17.preview.emergentagent.com",
+    "timestamp": "2026-02-08T22:58:54.365224",
+    "focus": "Offline maps PDF downloads for 4 national parks"
+  },
+  "detailed_results": [
+    {
+      "test_name": "Offline Map PDF - Yellowstone",
+      "success": true,
+      "details": "PDF downloaded successfully (8,587,876 bytes = 8.2 MB)",
+      "timestamp": "2026-02-08T22:58:52.672167",
+      "response_data": {
+        "content_type": "application/pdf",
+        "size_bytes": 8587876,
+        "size_mb": 8.19003677368164
+      }
+    },
+    {
+      "test_name": "Offline Map PDF - Yosemite",
+      "success": true,
+      "details": "PDF downloaded successfully (2,484,405 bytes = 2.4 MB)",
+      "timestamp": "2026-02-08T22:58:53.270994",
+      "response_data": {
+        "content_type": "application/pdf",
+        "size_bytes": 2484405,
+        "size_mb": 2.3693132400512695
+      }
+    },
+    {
+      "test_name": "Offline Map PDF - Grand Canyon",
+      "success": true,
+      "details": "PDF downloaded successfully (691,350 bytes = 0.7 MB)",
+      "timestamp": "2026-02-08T22:58:53.845640",
+      "response_data": {
+        "content_type": "application/pdf",
+        "size_bytes": 691350,
+        "size_mb": 0.6593227386474609
+      }
+    },
+    {
+      "test_name": "Offline Map PDF - Zion",
+      "success": true,
+      "details": "PDF downloaded successfully (5,032,234 bytes = 4.8 MB)",
+      "timestamp": "2026-02-08T22:58:54.365008",
+      "response_data": {
+        "content_type": "application/pdf",
+        "size_bytes": 5032234,
+        "size_mb": 4.799112319946289
+      }
+    }
+  ]
+}
