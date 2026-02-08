@@ -1,0 +1,27 @@
+{
+  "timestamp": "2026-02-08T22:17:10.840942",
+  "backend_url": "https://ec0aa055-ea47-470e-bc88-1706654d1a17.preview.emergentagent.com",
+  "tests_run": 3,
+  "tests_passed": 2,
+  "success_rate": "66.7%",
+  "results": [
+    {
+      "test": "API Connectivity",
+      "success": false,
+      "details": "Connection failed: Expecting value: line 1 column 1 (char 0)",
+      "response_data": null
+    },
+    {
+      "test": "Yellowstone Offline Map PDF",
+      "success": true,
+      "details": "PDF returned successfully (size unknown)",
+      "response_data": null
+    },
+    {
+      "test": "Trail Route GeoJSON",
+      "success": true,
+      "details": "GeoJSON with 24 coordinates returned for trail: Grand Prismatic Spring Overlook Trail",
+      "response_data": null
+    }
+  ]
+}
