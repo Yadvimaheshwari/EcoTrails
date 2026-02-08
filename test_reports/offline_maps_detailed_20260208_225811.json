@@ -1,0 +1,56 @@
+{
+  "summary": {
+    "total_tests": 4,
+    "passed_tests": 3,
+    "success_rate": 0.75,
+    "backend_url": "https://ec0aa055-ea47-470e-bc88-1706654d1a17.preview.emergentagent.com",
+    "timestamp": "2026-02-08T22:58:11.659195",
+    "focus": "Offline maps PDF downloads for 4 national parks"
+  },
+  "detailed_results": [
+    {
+      "test_name": "Offline Map PDF - Yellowstone",
+      "success": true,
+      "details": "PDF downloaded successfully (8,587,876 bytes = 8.2 MB)",
+      "timestamp": "2026-02-08T22:58:09.915044",
+      "response_data": {
+        "content_type": "application/pdf",
+        "size_bytes": 8587876,
+        "size_mb": 8.19003677368164
+      }
+    },
+    {
+      "test_name": "Offline Map PDF - Yosemite",
+      "success": false,
+      "details": "Expected issue: no_pdf_found for park code yose. Main agent said Yosemite should use campground map.",
+      "timestamp": "2026-02-08T22:58:10.448102",
+      "response_data": {
+        "available": false,
+        "reason": "no_pdf_found",
+        "parkCode": "yose"
+      }
+    },
+    {
+      "test_name": "Offline Map PDF - Grand Canyon",
+      "success": true,
+      "details": "PDF downloaded successfully (691,350 bytes = 0.7 MB)",
+      "timestamp": "2026-02-08T22:58:11.016469",
+      "response_data": {
+        "content_type": "application/pdf",
+        "size_bytes": 691350,
+        "size_mb": 0.6593227386474609
+      }
+    },
+    {
+      "test_name": "Offline Map PDF - Zion",
+      "success": true,
+      "details": "PDF downloaded successfully (5,032,234 bytes = 4.8 MB)",
+      "timestamp": "2026-02-08T22:58:11.659001",
+      "response_data": {
+        "content_type": "application/pdf",
+        "size_bytes": 5032234,
+        "size_mb": 4.799112319946289
+      }
+    }
+  ]
+}
