@@ -1,8 +1,1 @@
-{
-  "/not-found": "app/not-found.js",
-  "/onboarding/page": "app/onboarding/page.js",
-  "/explore/page": "app/explore/page.js",
-  "/places/[id]/page": "app/places/[id]/page.js",
-  "/journal/page": "app/journal/page.js",
-  "/hikes/[id]/live/page": "app/hikes/[id]/live/page.js"
-}
+{}
