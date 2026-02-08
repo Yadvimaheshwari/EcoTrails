@@ -128,7 +128,7 @@ NPS_MAP_DATABASE: Dict[str, Dict[str, str]] = {
     },
     # Wyoming
     "yellowstone": {
-        "map_url": "https://www.nps.gov/yell/planyourvisit/upload/YELL_Map.pdf",
+        "map_url": "https://www.nps.gov/yell/planyourvisit/upload/2025_Yellowstone-Unigrid_Web-508.pdf",
         "source": "NPS Yellowstone",
         "map_type": "park_map"
     },
