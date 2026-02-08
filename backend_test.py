@@ -49,20 +49,21 @@ class EcoTrailsAPITester:
     def test_root_endpoint(self):
         """Test root endpoint for basic connectivity"""
         try:
-            response = self.session.get(f"{self.base_url}/")
+            # Test the API endpoint directly since root serves frontend
+            response = self.session.get(f"{self.base_url}/api/v1/places/search", params={"query": "test", "limit": 1})
             if response.status_code == 200:
                 data = response.json()
-                if "EcoAtlas API" in data.get("message", ""):
-                    self.log_test("Root Endpoint", True, f"API running, version: {data.get('version', 'unknown')}")
+                if "places" in data:
+                    self.log_test("API Connectivity", True, "API is accessible and responding")
                     return True
                 else:
-                    self.log_test("Root Endpoint", False, f"Unexpected response: {data}")
+                    self.log_test("API Connectivity", False, f"Unexpected API response: {data}")
                     return False
             else:
-                self.log_test("Root Endpoint", False, f"Status {response.status_code}: {response.text}")
+                self.log_test("API Connectivity", False, f"Status {response.status_code}: {response.text}")
                 return False
         except Exception as e:
-            self.log_test("Root Endpoint", False, f"Connection error: {str(e)}")
+            self.log_test("API Connectivity", False, f"Connection error: {str(e)}")
             return False
 
     def test_places_search(self, query: str = "yellowstone"):
