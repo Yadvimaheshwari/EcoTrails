@@ -28,11 +28,6 @@ NPS_MAP_DATABASE: Dict[str, Dict[str, str]] = {
         "source": "NPS Yosemite",
         "map_type": "campground_map"
     },
-    "yosemite": {
-        "map_url": "https://www.nps.gov/yose/planyourvisit/upload/YOSEmap1.pdf",
-        "source": "NPS Yosemite",
-        "map_type": "park_map"
-    },
     "redwood": {
         "map_url": "https://www.nps.gov/redw/planyourvisit/upload/REDW_Map.pdf",
         "source": "NPS Redwood",
