@@ -4047,24 +4047,6 @@ async def download_place_offline_map_pdf(
                         park_code, full_name, match_score = _select_best_nps_park_code(place.name, parks)
                 except Exception as e:
                     logger.info(f"[OfflineMapPDF] placeId={place_id} NPS API search failed: {e}")
-                )
-                if resp.status_code == 200:
-                    parks = resp.json().get("data", []) or []
-                    if parks:
-                        park_code = derived_code
-                        full_name = parks[0].get("fullName", place.name)
-                        match_score = 100
-            
-            # Fallback to NPS search if direct match didn't work
-            if not park_code:
-                resp = requests.get(
-                    "https://developer.nps.gov/api/v1/parks",
-                    params={"q": place.name, "limit": 20, "api_key": nps_api_key},
-                    timeout=10,
-                )
-                if resp.status_code == 200:
-                    parks = resp.json().get("data", []) or []
-                    park_code, full_name, match_score = _select_best_nps_park_code(place.name, parks)
     except Exception as e:
         logger.info(f"[OfflineMapPDF] placeId={place_id} nps_search_failed err={e}")
 
