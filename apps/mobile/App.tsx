@@ -97,6 +97,7 @@ const DuringHikeScreenWrapper = (props: any) => {
 export default function App() {
   const { loadAuth, isLoading, user } = useAuthStore();
   const [appReady, setAppReady] = useState(false);
+  const [currentRoute, setCurrentRoute] = useState('initializing');
   const enableLegacyScreens = process.env.EXPO_PUBLIC_ENABLE_LEGACY_SCREENS === '1';
 
   useEffect(() => {
@@ -113,6 +114,18 @@ export default function App() {
     init();
   }, []);
 
+  const onStateChange = useCallback(() => {
+    try {
+      const r = navigationRef.getCurrentRoute();
+      if (r?.name) {
+        console.log('[EcoTrails] Route:', r.name);
+        setCurrentRoute(r.name);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   if (!appReady || isLoading) {
     return null;
   }
@@ -120,15 +133,10 @@ export default function App() {
   return (
     <NavigationContainer
       ref={navigationRef}
-      onStateChange={() => {
-        try {
-          const r = navigationRef.getCurrentRoute();
-          if (r?.name) {
-            console.log('[EcoTrails] Route:', r.name);
-          }
-        } catch {
-          // ignore
-        }
+      onStateChange={onStateChange}
+      onReady={() => {
+        const r = navigationRef.getCurrentRoute();
+        if (r?.name) setCurrentRoute(r.name);
       }}
     >
       <StatusBar style="dark" />
@@ -168,8 +176,7 @@ export default function App() {
           </>
         )}
       </Stack.Navigator>
-      {/* DebugBanner must be inside NavigationContainer but rendered after Stack.Navigator */}
-      <DebugBanner />
+      <DebugBanner routeName={currentRoute} />
     </NavigationContainer>
   );
 }
