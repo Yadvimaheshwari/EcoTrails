@@ -70,9 +70,9 @@ NPS_MAP_DATABASE: Dict[str, Dict[str, str]] = {
     },
     # Arizona
     "grand canyon": {
-        "map_url": "https://www.nps.gov/grca/planyourvisit/upload/grca-yavapai.pdf",
+        "map_url": "https://www.nps.gov/grca/planyourvisit/upload/GRCAmap2.pdf",
         "source": "NPS Grand Canyon",
-        "map_type": "trail_map"
+        "map_type": "park_map"
     },
     "saguaro": {
         "map_url": "https://www.nps.gov/sagu/planyourvisit/upload/SAGU_Map.pdf",
