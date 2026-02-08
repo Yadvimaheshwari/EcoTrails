@@ -4,11 +4,15 @@ AI Services for EcoTrails - Nano Banana Pro, Veo, and Gemini integration
 import os
 import logging
 import base64
+import asyncio
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from sqlalchemy.orm import Session
-from google import genai
-from google.genai import types
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv('/app/backend/.env')
+
 from backend.models import Hike, Media, RoutePoint, Discovery
 
 logger = logging.getLogger("EcoAtlas.AI")
@@ -16,6 +20,7 @@ logger = logging.getLogger("EcoAtlas.AI")
 # Initialize Gemini client
 def get_gemini_client(api_key: Optional[str] = None):
     """Get Gemini client with API key"""
+    from google import genai
     key = api_key or os.environ.get("API_KEY")
     if not key:
         raise ValueError("API_KEY not set")
@@ -28,62 +33,70 @@ async def enhance_photo_nano_banana(
     api_key: str
 ) -> Dict[str, Any]:
     """
-    Enhance photo using Nano Banana Pro (Gemini's image editing)
-    
-    Note: Nano Banana Pro is integrated into Gemini, so we use Gemini's image editing capabilities
+    Enhance photo using Nano Banana (Gemini's image generation/editing)
+    Uses emergentintegrations library for proper implementation
     """
     try:
-        client = get_gemini_client(api_key)
+        from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+        
+        # Use Emergent LLM key for Nano Banana
+        emergent_key = os.environ.get("EMERGENT_LLM_KEY")
+        if not emergent_key:
+            return {"success": False, "error": "EMERGENT_LLM_KEY not configured"}
         
         # Convert image to base64
         image_base64 = base64.b64encode(image_data).decode('utf-8')
         
-        # Create prompt for image enhancement
-        enhancement_prompt = f"""Enhance this hiking photo with the following adjustments:
-- Lighting: {options.get('lighting', 'natural')}
-- Style: {options.get('style', 'natural')}
-- Enhance subject: {options.get('enhance_subject', True)}
-- Remove shadows: {options.get('remove_shadows', False)}
-- Background: {'Replace with natural outdoor background' if options.get('background_replacement') else 'Keep original'}
-
-Apply professional photo enhancement while preserving the authenticity of the scene and subjects.
-Return the enhanced image as base64 encoded data."""
-
-        # Use Gemini's image generation/editing capabilities
-        # Note: Nano Banana Pro API integration pending - using Gemini vision for now
-        import os
-        is_dev = os.environ.get("ENVIRONMENT", "production") == "development"
+        # Create enhancement prompt
+        enhancement_style = options.get('style', 'natural')
+        lighting = options.get('lighting', 'natural')
         
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=[
-                types.Part.from_bytes(
-                    data=image_data,
-                    mime_type="image/jpeg"
-                ),
-                enhancement_prompt
-            ],
-            config={
-                "temperature": 0.7,
-            }
+        enhancement_prompt = f"""Enhance this hiking/nature photo with the following adjustments:
+- Lighting: {lighting} (improve exposure and contrast)
+- Style: {enhancement_style}
+- Enhance the colors to make nature elements pop
+- Improve clarity and sharpness
+- Keep the authenticity of the scene
+Return the enhanced version of this photo."""
+
+        # Initialize chat with Nano Banana model
+        import uuid
+        session_id = str(uuid.uuid4())
+        chat = LlmChat(
+            api_key=emergent_key, 
+            session_id=session_id, 
+            system_message="You are an expert photo enhancement AI specializing in nature and hiking photography."
+        )
+        chat.with_model("gemini", "gemini-3-pro-image-preview").with_params(modalities=["image", "text"])
+        
+        # Create message with image
+        msg = UserMessage(
+            text=enhancement_prompt,
+            file_contents=[ImageContent(image_base64)]
         )
         
-        # In production, return error if not fully implemented
-        # In dev mode, return metadata for testing
-        if not is_dev:
+        # Send message and get response
+        text_response, images = await chat.send_message_multimodal_response(msg)
+        
+        if images and len(images) > 0:
+            # Get the enhanced image
+            enhanced_image = images[0]
+            enhanced_bytes = base64.b64decode(enhanced_image['data'])
+            
+            return {
+                "success": True,
+                "enhanced_image": enhanced_image['data'],  # base64 encoded
+                "mime_type": enhanced_image.get('mime_type', 'image/png'),
+                "original_size": len(image_data),
+                "enhanced_size": len(enhanced_bytes),
+                "ai_notes": text_response[:200] if text_response else "Enhancement applied"
+            }
+        else:
             return {
                 "success": False,
-                "error": "Photo enhancement not yet fully implemented. Nano Banana Pro API integration required."
+                "error": "No enhanced image returned from AI",
+                "ai_response": text_response[:200] if text_response else None
             }
-        
-        # Dev mode: return metadata for testing
-        return {
-            "success": True,
-            "enhancement_suggestions": response.text if hasattr(response, 'text') else "Enhancement applied",
-            "original_size": len(image_data),
-            "dev_mode": True,
-            "note": "DEV MODE: Nano Banana Pro integration pending - enhanced image would be returned here"
-        }
         
     except Exception as e:
         logger.error(f"Photo enhancement error: {e}", exc_info=True)
