@@ -1,0 +1,81 @@
+{
+  "summary": {
+    "total_tests": 8,
+    "passed_tests": 4,
+    "success_rate": 0.5,
+    "backend_url": "https://ec0aa055-ea47-470e-bc88-1706654d1a17.preview.emergentagent.com",
+    "timestamp": "2026-02-08T22:56:50.132556",
+    "focus": "EcoTrails reported fixes testing"
+  },
+  "detailed_results": [
+    {
+      "test_name": "API Connectivity",
+      "success": true,
+      "details": "Backend is accessible",
+      "timestamp": "2026-02-08T22:56:47.409477",
+      "response_data": null
+    },
+    {
+      "test_name": "Offline Map PDF - Yellowstone",
+      "success": true,
+      "details": "PDF downloaded successfully (8587876 bytes)",
+      "timestamp": "2026-02-08T22:56:48.353275",
+      "response_data": {
+        "content_type": "application/pdf",
+        "size_bytes": 8587876
+      }
+    },
+    {
+      "test_name": "Offline Map PDF - Yosemite",
+      "success": false,
+      "details": "JSON response but no PDF URL found",
+      "timestamp": "2026-02-08T22:56:48.931638",
+      "response_data": {
+        "available": false,
+        "reason": "no_pdf_found",
+        "parkCode": "yose"
+      }
+    },
+    {
+      "test_name": "Offline Map PDF - Grand Canyon",
+      "success": true,
+      "details": "PDF downloaded successfully (691350 bytes)",
+      "timestamp": "2026-02-08T22:56:49.411992",
+      "response_data": {
+        "content_type": "application/pdf",
+        "size_bytes": 691350
+      }
+    },
+    {
+      "test_name": "Offline Map PDF - Zion",
+      "success": true,
+      "details": "PDF downloaded successfully (5032234 bytes)",
+      "timestamp": "2026-02-08T22:56:50.022811",
+      "response_data": {
+        "content_type": "application/pdf",
+        "size_bytes": 5032234
+      }
+    },
+    {
+      "test_name": "Photo Enhancement Timeout",
+      "success": false,
+      "details": "Photo enhancement endpoint not found",
+      "timestamp": "2026-02-08T22:56:50.072398",
+      "response_data": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "test_name": "3D Conversion Dev Mode",
+      "success": false,
+      "details": "3D conversion endpoint not found",
+      "timestamp": "2026-02-08T22:56:50.083075",
+      "response_data": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "test_name": "Video Generation Graceful",
+      "success": false,
+      "details": "Video generation endpoint not found",
+      "timestamp": "2026-02-08T22:56:50.132384",
+      "response_data": "{\"detail\":\"Not Found\"}"
+    }
+  ]
+}
