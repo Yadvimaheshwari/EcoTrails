@@ -697,6 +697,7 @@ export default function HikeModeLivePage() {
           trailBounds={trailBounds}
           currentLocation={state.currentLocation}
           routePoints={state.routePoints}
+          trailRoute={trailRoute}
           discoveryNodes={getNodesWithStatus()}
           captures={state.captures}
           mapLayer={mapLayer}
