@@ -125,16 +125,30 @@ export const DuringHikeScreen: React.FC = ({ route, navigation }: any) => {
     return cleanup;
   }, []);
 
-  // Load navigation data
+  // Load navigation data (including trail route)
   useEffect(() => {
     const loadNavigation = async () => {
       if (!trailId) return;
       try {
-        const response = await api.get(`/api/v1/trails/${trailId}/navigation`);
-        setTrailheadCoords(response.data.trailhead);
+        // Load trailhead navigation
+        const navResponse = await api.get(`/api/v1/trails/${trailId}/navigation`);
+        setTrailheadCoords(navResponse.data.trailhead);
         console.log('[DuringHike] Navigation data loaded');
+        
+        // Load trail route polyline
+        const routeResponse = await api.get(`/api/v1/trails/${trailId}/route`);
+        const geojson = routeResponse.data?.geojson;
+        if (geojson && geojson.coordinates && Array.isArray(geojson.coordinates)) {
+          // Convert [lng, lat] GeoJSON format to react-native-maps format
+          const routeCoords = geojson.coordinates.map((coord: [number, number]) => ({
+            latitude: coord[1],
+            longitude: coord[0],
+          }));
+          setTrailRoute(routeCoords);
+          console.log('[DuringHike] Trail route loaded with', routeCoords.length, 'points');
+        }
       } catch (error) {
-        console.warn('[DuringHike] Navigation data unavailable');
+        console.warn('[DuringHike] Navigation/route data unavailable:', error);
       }
     };
     loadNavigation();
