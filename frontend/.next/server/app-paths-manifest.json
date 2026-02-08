@@ -1,7 +1,4 @@
 {
-  "/not-found": "app/not-found.js",
-  "/page": "app/page.js",
-  "/onboarding/page": "app/onboarding/page.js",
   "/explore/page": "app/explore/page.js",
   "/places/[id]/page": "app/places/[id]/page.js",
   "/login/page": "app/login/page.js"
