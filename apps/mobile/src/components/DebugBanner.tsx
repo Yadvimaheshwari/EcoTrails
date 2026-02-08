@@ -1,42 +1,16 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { useNavigationState } from '@react-navigation/native';
 
 import { colors } from '../config/colors';
 import { Text } from './ui/Text';
 import { API_BASE_URL } from '../config/api';
 
-function getActiveRouteName(state: any): string {
-  try {
-    if (!state || !state.routes || typeof state.index !== 'number') return 'unknown';
-    let current = state.routes[state.index];
-    while (current?.state) {
-      const s = current.state;
-      current = s.routes?.[s.index ?? 0];
-    }
-    return current?.name || 'unknown';
-  } catch {
-    return 'unknown';
-  }
-}
-
-export const DebugBanner: React.FC = () => {
-  // Wrap in try-catch to handle cases where navigation state isn't ready
-  let navState: any = null;
-  try {
-    navState = useNavigationState((s) => s);
-  } catch (e) {
-    // Navigation state not available yet - this is expected during initial render
-  }
-
-  const routeName = useMemo(() => getActiveRouteName(navState), [navState]);
+// Separate component that uses navigation hooks - only rendered when navigation is ready
+const DebugBannerContent: React.FC<{ routeName: string }> = ({ routeName }) => {
   const buildTimestamp =
     (process.env.EXPO_PUBLIC_BUILD_TIMESTAMP as string | undefined) ||
     (process.env.NEXT_PUBLIC_BUILD_TIMESTAMP as string | undefined) ||
     'unknown';
-
-  const show = __DEV__ || process.env.EXPO_PUBLIC_SHOW_DEBUG_BANNER === '1';
-  if (!show) return null;
 
   return (
     <View pointerEvents="none" style={styles.container}>
@@ -45,6 +19,15 @@ export const DebugBanner: React.FC = () => {
       </Text>
     </View>
   );
+};
+
+export const DebugBanner: React.FC = () => {
+  const [routeName, setRouteName] = useState<string>('initializing');
+
+  const show = __DEV__ || process.env.EXPO_PUBLIC_SHOW_DEBUG_BANNER === '1';
+  if (!show) return null;
+
+  return <DebugBannerContent routeName={routeName} />;
 };
 
 const styles = StyleSheet.create({
