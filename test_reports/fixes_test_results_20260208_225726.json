@@ -1,0 +1,81 @@
+{
+  "summary": {
+    "total_tests": 8,
+    "passed_tests": 4,
+    "success_rate": 0.5,
+    "backend_url": "https://ec0aa055-ea47-470e-bc88-1706654d1a17.preview.emergentagent.com",
+    "timestamp": "2026-02-08T22:57:26.268042",
+    "focus": "EcoTrails reported fixes testing"
+  },
+  "detailed_results": [
+    {
+      "test_name": "API Connectivity",
+      "success": true,
+      "details": "Backend is accessible",
+      "timestamp": "2026-02-08T22:57:23.907935",
+      "response_data": null
+    },
+    {
+      "test_name": "Offline Map PDF - Yellowstone",
+      "success": true,
+      "details": "PDF downloaded successfully (8587876 bytes)",
+      "timestamp": "2026-02-08T22:57:24.704804",
+      "response_data": {
+        "content_type": "application/pdf",
+        "size_bytes": 8587876
+      }
+    },
+    {
+      "test_name": "Offline Map PDF - Yosemite",
+      "success": false,
+      "details": "JSON response but no PDF URL found",
+      "timestamp": "2026-02-08T22:57:25.200383",
+      "response_data": {
+        "available": false,
+        "reason": "no_pdf_found",
+        "parkCode": "yose"
+      }
+    },
+    {
+      "test_name": "Offline Map PDF - Grand Canyon",
+      "success": true,
+      "details": "PDF downloaded successfully (691350 bytes)",
+      "timestamp": "2026-02-08T22:57:25.647648",
+      "response_data": {
+        "content_type": "application/pdf",
+        "size_bytes": 691350
+      }
+    },
+    {
+      "test_name": "Offline Map PDF - Zion",
+      "success": true,
+      "details": "PDF downloaded successfully (5032234 bytes)",
+      "timestamp": "2026-02-08T22:57:26.238521",
+      "response_data": {
+        "content_type": "application/pdf",
+        "size_bytes": 5032234
+      }
+    },
+    {
+      "test_name": "Photo Enhancement Timeout",
+      "success": false,
+      "details": "Status 422: {\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\",\"image\"],\"msg\":\"Field required\",\"input\":null,\"url\":\"https://errors.pydantic.dev/2.12/v/missing\"}]}",
+      "timestamp": "2026-02-08T22:57:26.251080",
+      "response_data": null
+    },
+    {
+      "test_name": "3D Conversion Dev Mode",
+      "success": false,
+      "details": "Status 401: {\"detail\":\"Unauthorized\"}",
+      "timestamp": "2026-02-08T22:57:26.258381",
+      "response_data": null
+    },
+    {
+      "test_name": "Video Generation Graceful",
+      "success": false,
+      "details": "Status 401: {\"detail\":\"Unauthorized\"}",
+      "timestamp": "2026-02-08T22:57:26.267885",
+      "response_data": null
+    }
+  ]
+}
