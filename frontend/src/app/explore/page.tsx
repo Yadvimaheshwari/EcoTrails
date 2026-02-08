@@ -78,16 +78,20 @@ export default function ExplorePage() {
   const [requestingLocation, setRequestingLocation] = useState(false);
   const [realActiveHike, setRealActiveHike] = useState<any>(null);
 
-  // Redirect if not authenticated
+  // Redirect if not authenticated (unless onboarding was completed with skip)
   useEffect(() => {
-    if (!authLoading && !user) {
+    // Allow guest access if onboarding was completed
+    const onboardingState = localStorage.getItem('ecotrails_onboarding');
+    const isOnboardingCompleted = onboardingState ? JSON.parse(onboardingState).completed : false;
+    
+    if (!authLoading && !user && !isOnboardingCompleted) {
       router.push('/login');
     }
   }, [user, authLoading, router]);
 
   // Load user stats
   useEffect(() => {
-    if (!user) return;
+    // Allow loading even for guest users
     loadStats();
     loadActiveHike();
   }, [user]);
@@ -133,7 +137,7 @@ export default function ExplorePage() {
 
   // Load nearby trails on mount
   useEffect(() => {
-    if (!user) return;
+    // Load for both logged in and guest users
     loadNearbyTrails();
   }, [user]);
 
