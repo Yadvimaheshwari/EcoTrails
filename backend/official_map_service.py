@@ -86,7 +86,7 @@ NPS_MAP_DATABASE: Dict[str, Dict[str, str]] = {
     },
     # Utah
     "zion": {
-        "map_url": "https://www.nps.gov/zion/planyourvisit/upload/ZION_Map.pdf",
+        "map_url": "https://www.nps.gov/zion/planyourvisit/upload/ZionUnigrid.pdf",
         "source": "NPS Zion",
         "map_type": "park_map"
     },
