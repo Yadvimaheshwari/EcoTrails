@@ -161,13 +161,11 @@ class EcoTrailsFixesTester:
         """Test 3D conversion endpoint in dev mode"""
         try:
             # Test with a mock 3D conversion request
-            payload = {
-                "media_id": "test_media_123",
-                "user_id": "test_user_456"
-            }
+            # First need to test the media endpoint: POST /api/v1/media/{media_id}/3d
+            media_id = "test_media_123"
             
-            response = self.session.post(f"{self.base_url}/api/v1/3d/convert", 
-                                       json=payload, timeout=15)
+            response = self.session.post(f"{self.base_url}/api/v1/media/{media_id}/3d", 
+                                       timeout=15)
             
             if response.status_code == 200:
                 data = response.json()
