@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text as RNText, StyleSheet } from 'react-native';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -24,11 +24,35 @@ import { TripPlanDetailScreen } from './src/screens/TripPlanDetailScreen';
 import { OfflineMapsScreen } from './src/screens/OfflineMapsScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { colors } from './src/config/colors';
-import { DebugBanner } from './src/components/DebugBanner';
 import { API_BASE_URL } from './src/config/api';
 
 const Stack = createNativeStackNavigator();
 const navigationRef = createNavigationContainerRef();
+
+// Simple Debug Banner without navigation hooks
+const DebugBanner: React.FC<{ routeName: string }> = ({ routeName }) => {
+  const show = __DEV__ || process.env.EXPO_PUBLIC_SHOW_DEBUG_BANNER === '1';
+  if (!show) return null;
+  
+  const buildTimestamp = process.env.EXPO_PUBLIC_BUILD_TIMESTAMP || 'dev';
+
+  return (
+    <View pointerEvents="none" style={{
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      backgroundColor: 'rgba(0,0,0,0.70)',
+      zIndex: 9999,
+    }}>
+      <RNText style={{ color: '#fff', fontSize: 11 }} numberOfLines={1}>
+        {routeName} • {API_BASE_URL} • {buildTimestamp}
+      </RNText>
+    </View>
+  );
+};
 
 // Lazy-load DuringHikeScreen to avoid react-native-reanimated native crash
 // with older Expo Go versions. Loaded on-demand when user navigates to it.
