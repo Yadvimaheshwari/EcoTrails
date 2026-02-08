@@ -445,7 +445,7 @@ export default function ExplorePage() {
       distance: activity.distance_miles || undefined,
     })) || [];
 
-  if (authLoading || !user) {
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-slate-600">Loading...</div>
@@ -453,12 +453,16 @@ export default function ExplorePage() {
     );
   }
 
+  // For guest users (no user), show the explore page with limited functionality
+  const isGuest = !user;
+  const displayName = user?.name || 'Explorer';
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-emerald-50/30">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {/* 1. Compact Identity Header - ALWAYS VISIBLE */}
         <ExploreHeaderIdentity
-          userName={user.name}
+          userName={displayName}
           explorerLevel={userStats?.explorer_level || 'Adventurer'}
           nextMilestone={userStats?.next_milestone || 'Complete your first trail'}
           currentPoints={userStats?.current_points || 0}
