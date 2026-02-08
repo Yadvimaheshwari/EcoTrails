@@ -137,7 +137,7 @@ export default function ExplorePage() {
 
   // Load nearby trails on mount
   useEffect(() => {
-    if (!user) return;
+    // Load for both logged in and guest users
     loadNearbyTrails();
   }, [user]);
 
