@@ -13,7 +13,7 @@ import {
 import { Badge, BadgeType, BadgeAward, BADGE_DEFINITIONS } from '../types/badge';
 
 // Feature flag for mock data (set to true for dev without backend)
-const USE_MOCK_DISCOVERIES = true;
+const USE_MOCK_DISCOVERIES = false;
 
 /**
  * Fetch discoveries for a trail
