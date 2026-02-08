@@ -3941,23 +3941,101 @@ async def download_place_offline_map_pdf(
     if not place:
         raise HTTPException(status_code=404, detail="Place not found")
 
-    # Derive parkCode per request from the NPS parks API response (no cached/meta parkCode).
+    # Derive parkCode per request from the NPS parks API response
     park_code: Optional[str] = None
     full_name: Optional[str] = None
     match_score: Optional[int] = None
+    
+    # Common park name to code mappings for major parks
+    PARK_CODE_MAP = {
+        "yellowstone": "yell",
+        "yosemite": "yose",
+        "grand canyon": "grca",
+        "zion": "zion",
+        "acadia": "acad",
+        "glacier": "glac",
+        "rocky mountain": "romo",
+        "grand teton": "grte",
+        "olympic": "olym",
+        "joshua tree": "jotr",
+        "death valley": "deva",
+        "sequoia": "sequ",
+        "kings canyon": "kica",
+        "bryce canyon": "brca",
+        "arches": "arch",
+        "canyonlands": "cany",
+        "capitol reef": "care",
+        "mesa verde": "meve",
+        "great smoky mountains": "grsm",
+        "shenandoah": "shen",
+        "everglades": "ever",
+        "big bend": "bibe",
+        "guadalupe mountains": "gumo",
+        "carlsbad caverns": "cave",
+        "hawaii volcanoes": "havo",
+        "haleakala": "hale",
+        "denali": "dena",
+        "kenai fjords": "kefj",
+        "redwood": "redw",
+        "lassen volcanic": "lavo",
+        "crater lake": "crla",
+        "mount rainier": "mora",
+        "north cascades": "noca",
+        "badlands": "badl",
+        "wind cave": "wica",
+        "theodore roosevelt": "thro",
+        "voyageurs": "voya",
+        "isle royale": "isro",
+        "mammoth cave": "maca",
+        "hot springs": "hosp",
+        "dry tortugas": "drto",
+        "biscayne": "bisc",
+        "congaree": "cong",
+        "great sand dunes": "grsa",
+        "black canyon": "blca",
+        "petrified forest": "pefo",
+        "saguaro": "sagu",
+        "channel islands": "chis",
+        "pinnacles": "pinn",
+    }
+    
     try:
         nps_api_key = os.environ.get("NPS_API_KEY")
         if nps_api_key and place.name:
             import requests
-
-            resp = requests.get(
-                "https://developer.nps.gov/api/v1/parks",
-                params={"q": place.name, "limit": 8, "api_key": nps_api_key},
-                timeout=10,
-            )
-            if resp.status_code == 200:
-                parks = resp.json().get("data", []) or []
-                park_code, full_name, match_score = _select_best_nps_park_code(place.name, parks)
+            
+            # First try to derive park code from name
+            place_name_lower = place.name.lower()
+            derived_code = None
+            for park_name, code in PARK_CODE_MAP.items():
+                if park_name in place_name_lower:
+                    derived_code = code
+                    break
+            
+            if derived_code:
+                # Verify the derived code is valid
+                resp = requests.get(
+                    "https://developer.nps.gov/api/v1/parks",
+                    params={"parkCode": derived_code, "api_key": nps_api_key},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    parks = resp.json().get("data", []) or []
+                    if parks:
+                        park_code = derived_code
+                        full_name = parks[0].get("fullName", place.name)
+                        match_score = 100
+            
+            # Fallback to NPS search if direct match didn't work
+            if not park_code:
+                resp = requests.get(
+                    "https://developer.nps.gov/api/v1/parks",
+                    params={"q": place.name, "limit": 20, "api_key": nps_api_key},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    parks = resp.json().get("data", []) or []
+                    park_code, full_name, match_score = _select_best_nps_park_code(place.name, parks)
     except Exception as e:
         logger.info(f"[OfflineMapPDF] placeId={place_id} nps_search_failed err={e}")
 
