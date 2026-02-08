@@ -1,0 +1,18 @@
+{
+  "summary": {
+    "total_tests": 1,
+    "passed_tests": 0,
+    "success_rate": 0.0,
+    "backend_url": "https://ec0aa055-ea47-470e-bc88-1706654d1a17.preview.emergentagent.com",
+    "timestamp": "2026-02-08T21:27:58.479568"
+  },
+  "detailed_results": [
+    {
+      "test_name": "Root Endpoint",
+      "success": false,
+      "details": "Connection error: Expecting value: line 1 column 1 (char 0)",
+      "timestamp": "2026-02-08T21:27:58.473925",
+      "response_data": null
+    }
+  ]
+}
