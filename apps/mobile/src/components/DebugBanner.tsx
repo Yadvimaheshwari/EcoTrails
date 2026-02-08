@@ -21,7 +21,13 @@ function getActiveRouteName(state: any): string {
 }
 
 export const DebugBanner: React.FC = () => {
-  const navState = useNavigationState((s) => s);
+  // Wrap in try-catch to handle cases where navigation state isn't ready
+  let navState: any = null;
+  try {
+    navState = useNavigationState((s) => s);
+  } catch (e) {
+    // Navigation state not available yet - this is expected during initial render
+  }
 
   const routeName = useMemo(() => getActiveRouteName(navState), [navState]);
   const buildTimestamp =
