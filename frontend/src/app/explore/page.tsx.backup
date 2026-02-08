@@ -1,0 +1,1177 @@
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
+import { searchPlaces, searchTrails, getDashboardStats, findNearbyPlaces } from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
+import { DiscoveryIdentifier } from '@/components/DiscoveryIdentifier';
+import { VoiceTranscriber } from '@/components/VoiceTranscriber';
+
+interface DashboardStats {
+  parks_explored: number;
+  trails_completed: number;
+  elevation_gained_feet: number;
+  rare_discoveries: number;
+  last_park: {
+    id: string;
+    name: string;
+    place_type: string;
+  } | null;
+  difficulty_progression: Record<string, number>;
+  places_visited: Array<{
+    id: string;
+    name: string;
+    state: string | null;
+    lat: number;
+    lng: number;
+  }>;
+  discoveries_by_type: Record<string, number>;
+  total_hikes: number;
+  completed_hikes: number;
+  explorer_level: string;
+  next_milestone: string;
+  next_milestone_points: number;
+  current_points: number;
+  recent_activity: Array<{
+    id: string;
+    trail_name: string;
+    place_name: string;
+    status: string;
+    date: string | null;
+    distance_miles: number | null;
+    elevation_gain_feet: number | null;
+  }>;
+  active_hikes: number;
+  upcoming_trips: number;
+  total_discoveries: number;
+}
+
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
+}
+
+function formatElevation(feet: number): string {
+  if (feet >= 1000) {
+    return `${(feet / 1000).toFixed(1)}K ft`;
+  }
+  return `${Math.round(feet).toLocaleString()} ft`;
+}
+
+// Explorer Overview Hero
+function ExplorerHero({ stats, userName }: { stats: DashboardStats; userName: string | undefined }) {
+  const firstName = userName?.split(' ')[0] || 'Explorer';
+  
+  return (
+    <div 
+      className="rounded-3xl p-8 mb-12 relative overflow-hidden"
+      style={{
+        background: 'linear-gradient(to bottom, #F6F8F7, #EDF3F0)',
+      }}
+    >
+      {/* Subtle topo texture overlay */}
+      <div 
+        className="absolute inset-0 opacity-[0.02]"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23000000' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+        }}
+      />
+      
+      <div className="relative z-10">
+        <h1 className="text-3xl sm:text-4xl font-light mb-3 text-text animate-slide-in" style={{ animationDelay: '0s', opacity: 0 }}>
+          {getGreeting()}, {firstName}
+        </h1>
+        
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 mb-6">
+          <div className="flex-1 min-w-0 animate-slide-in" style={{ animationDelay: '0.1s', opacity: 0 }}>
+            <div className="text-xs sm:text-sm text-textSecondary mb-1">Explorer level</div>
+            <div className="text-lg sm:text-xl font-medium transition-all duration-500" style={{ color: '#0F3D2E' }}>
+              {stats.explorer_level || 'Beginner'}
+            </div>
+          </div>
+          <div className="hidden sm:block h-8 w-px bg-border flex-shrink-0" />
+          <div className="flex-1 min-w-0 animate-slide-in" style={{ animationDelay: '0.2s', opacity: 0 }}>
+            <div className="text-xs sm:text-sm text-textSecondary mb-1">Next milestone</div>
+            <div className="text-sm sm:text-base text-text mb-2 transition-all duration-500">{stats.next_milestone || 'First trail completed'}</div>
+            {stats.next_milestone_points !== undefined && stats.current_points !== undefined && (
+              <div className="mt-2">
+                <div className="w-full bg-surface rounded-full h-2 overflow-hidden" style={{ backgroundColor: '#E8E8E3' }}>
+                  <div 
+                    className="h-full rounded-full transition-all duration-1000 ease-out animate-pulse-glow"
+                    style={{ 
+                      width: `${Math.min((stats.current_points / stats.next_milestone_points) * 100, 100)}%`,
+                      backgroundColor: '#4F8A6B'
+                    }}
+                  />
+                </div>
+                <div className="text-xs text-textSecondary mt-1.5">
+                  {stats.current_points || 0} / {stats.next_milestone_points || 20} points
+                </div>
+              </div>
+            )}
+            {(!stats.next_milestone_points || stats.current_points === undefined) && (
+              <div className="mt-2">
+                <div className="w-full bg-surface rounded-full h-2 overflow-hidden" style={{ backgroundColor: '#E8E8E3' }}>
+                  <div 
+                    className="h-full rounded-full transition-all duration-1000 ease-out"
+                    style={{ 
+                      width: `${Math.min(((stats.current_points || 0) / (stats.next_milestone_points || 20)) * 100, 100)}%`,
+                      backgroundColor: '#4F8A6B'
+                    }}
+                  />
+                </div>
+                <div className="text-xs text-textSecondary mt-1.5">
+                  {stats.current_points || 0} / {stats.next_milestone_points || 20} points
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
+          <div className="animate-slide-in" style={{ animationDelay: '0.1s', opacity: 0 }}>
+            <div className="text-xs text-textSecondary mb-1">Parks explored</div>
+            <div className="text-xl sm:text-2xl font-light text-text transition-all duration-500">{stats.parks_explored || 0}</div>
+          </div>
+          <div className="animate-slide-in" style={{ animationDelay: '0.2s', opacity: 0 }}>
+            <div className="text-xs text-textSecondary mb-1">Trails completed</div>
+            <div className="text-xl sm:text-2xl font-light text-text transition-all duration-500">{stats.trails_completed || 0}</div>
+          </div>
+          <div className="animate-slide-in" style={{ animationDelay: '0.3s', opacity: 0 }}>
+            <div className="text-xs text-textSecondary mb-1">Elevation</div>
+            <div className="text-xl sm:text-2xl font-light text-text transition-all duration-500">{formatElevation(stats.elevation_gained_feet || 0)}</div>
+          </div>
+        </div>
+        
+        {/* Journey Info */}
+        {((stats.active_hikes || 0) > 0 || 
+          (stats.upcoming_trips || 0) > 0 || 
+          (stats.total_discoveries || 0) > 0) && (
+          <div className="mt-6 pt-6 border-t border-border">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+              {(stats.active_hikes || 0) > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🥾</span>
+                  <div>
+                    <div className="text-textSecondary">Active hike{(stats.active_hikes || 0) !== 1 ? 's' : ''}</div>
+                    <div className="font-medium text-text">{stats.active_hikes || 0}</div>
+                  </div>
+                </div>
+              )}
+              {(stats.upcoming_trips || 0) > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">📅</span>
+                  <div>
+                    <div className="text-textSecondary">Upcoming trip{(stats.upcoming_trips || 0) !== 1 ? 's' : ''}</div>
+                    <div className="font-medium text-text">{stats.upcoming_trips || 0}</div>
+                  </div>
+                </div>
+              )}
+              {(stats.total_discoveries || 0) > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🦌</span>
+                  <div>
+                    <div className="text-textSecondary">Total discoveries</div>
+                    <div className="font-medium text-text">{stats.total_discoveries || 0}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Module 1: Exploration Progress
+function ExplorationProgress({ stats }: { stats: DashboardStats }) {
+  const totalParks = 10; // Example max
+  const totalTrails = 10; // Example max
+  const parksProgress = Math.min((stats.parks_explored / totalParks) * 100, 100);
+  const trailsProgress = Math.min((stats.trails_completed / totalTrails) * 100, 100);
+  const completionProgress = stats.total_hikes > 0 
+    ? Math.round((stats.completed_hikes / stats.total_hikes) * 100) 
+    : 0;
+  
+  const difficulties = ['easy', 'moderate', 'hard', 'expert'];
+  const difficultyColors = {
+    easy: '#4F8A6B', // moss green
+    moderate: '#4A9B9B', // teal
+    hard: '#4C7EF3', // alpine blue
+    expert: '#F4A340', // sunrise amber
+  };
+  
+  // Find highest completed difficulty
+  const completedDifficulties = Object.keys(stats.difficulty_progression).filter(
+    diff => stats.difficulty_progression[diff] > 0
+  );
+  const highestCompleted = completedDifficulties.length > 0 
+    ? completedDifficulties[completedDifficulties.length - 1]
+    : null;
+  
+  return (
+    <div className="mb-8 sm:mb-12">
+      <h2 className="text-xl sm:text-2xl font-light mb-4 sm:mb-6 text-text">Your exploration journey</h2>
+      
+      <div className="space-y-4 sm:space-y-6 mb-6 sm:mb-8">
+        <div>
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-sm font-medium text-text">Parks visited</span>
+            <span className="text-xs text-textSecondary">{stats.parks_explored || 0}</span>
+          </div>
+          <div className="flex gap-1">
+            {Array.from({ length: totalParks }).map((_, i) => (
+              <div
+                key={i}
+                className="flex-1 h-2 rounded-full transition-all duration-500"
+                style={{
+                  backgroundColor: i < (stats.parks_explored || 0) ? '#4F8A6B' : '#E8E8E3',
+                }}
+              />
+            ))}
+          </div>
+        </div>
+        
+        <div>
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-sm font-medium text-text">Trails completed</span>
+            <span className="text-xs text-textSecondary">{stats.trails_completed || 0}</span>
+          </div>
+          <div className="flex gap-1">
+            {Array.from({ length: totalTrails }).map((_, i) => (
+              <div
+                key={i}
+                className="flex-1 h-2 rounded-full transition-all duration-500"
+                style={{
+                  backgroundColor: i < (stats.trails_completed || 0) ? '#4F8A6B' : '#E8E8E3',
+                }}
+              />
+            ))}
+          </div>
+        </div>
+        
+        <div>
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-sm font-medium text-text">Completion progress</span>
+            <span className="text-xs text-textSecondary">{completionProgress}%</span>
+          </div>
+          <div className="w-full bg-surface rounded-full h-2 overflow-hidden">
+            <div 
+              className="h-full rounded-full transition-all duration-1000 ease-out"
+              style={{ 
+                width: `${completionProgress}%`,
+                backgroundColor: '#4F8A6B'
+              }}
+            />
+          </div>
+        </div>
+      </div>
+      
+      {/* Difficulty Progression Path */}
+      <div className="relative">
+        <div className="flex items-center justify-between mb-4">
+          {difficulties.map((diff, idx) => {
+            const isCompleted = (stats.difficulty_progression[diff] || 0) > 0;
+            const isActive = highestCompleted === diff;
+            const isLocked = !isCompleted && idx > 0 && !difficulties.slice(0, idx).some(d => (stats.difficulty_progression[d] || 0) > 0);
+            
+            return (
+              <div key={diff} className="flex-1 flex flex-col items-center relative">
+                <div className="flex items-center w-full">
+                  {idx > 0 && (
+                    <div 
+                      className="flex-1 h-0.5 mx-2"
+                      style={{
+                        backgroundColor: isCompleted ? difficultyColors[diff as keyof typeof difficultyColors] : '#E8E8E3',
+                        opacity: isCompleted ? 1 : 0.3,
+                      }}
+                    />
+                  )}
+                  <div className="relative group">
+                    <div
+                      className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                        isLocked ? 'opacity-40' : ''
+                      }`}
+                      style={{
+                        backgroundColor: isCompleted 
+                          ? difficultyColors[diff as keyof typeof difficultyColors]
+                          : '#E8E8E3',
+                        boxShadow: isActive ? `0 0 12px ${difficultyColors[diff as keyof typeof difficultyColors]}40` : 'none',
+                      }}
+                    >
+                      {isLocked ? (
+                        <span className="text-xs text-textSecondary">🔒</span>
+                      ) : (
+                        <div 
+                          className="w-4 h-4 rounded-full"
+                          style={{
+                            backgroundColor: isCompleted ? '#FFFFFF' : '#9B9B98',
+                          }}
+                        />
+                      )}
+                    </div>
+                    {isLocked && (
+                      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-text text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                        Complete {difficulties[idx - 1]} trails to unlock
+                      </div>
+                    )}
+                  </div>
+                  {idx < difficulties.length - 1 && (
+                    <div 
+                      className="flex-1 h-0.5 ml-2"
+                      style={{
+                        backgroundColor: isCompleted ? difficultyColors[diff as keyof typeof difficultyColors] : '#E8E8E3',
+                        opacity: isCompleted ? 1 : 0.3,
+                      }}
+                    />
+                  )}
+                </div>
+                <div className="mt-2 text-center">
+                  <div className="text-xs font-medium capitalize text-text">{diff}</div>
+                  <div className="text-xs text-textSecondary">{stats.difficulty_progression[diff] || 0}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Module 2: Discoveries
+function DiscoveriesModule({ discoveriesByType, rareCount }: { discoveriesByType: Record<string, number>; rareCount: number }) {
+  const discoveryCategories = [
+    { type: 'wildlife', icon: '🦌', label: 'Wildlife' },
+    { type: 'plant', icon: '🌿', label: 'Vegetation' },
+    { type: 'geology', icon: '🪨', label: 'Geology' },
+    { type: 'cultural', icon: '🏛', label: 'History' },
+  ];
+  
+  const total = Object.values(discoveriesByType).reduce((sum, count) => sum + count, 0);
+  
+  return (
+    <div className="mb-12">
+      <h2 className="text-2xl font-light mb-2 text-text">Discoveries</h2>
+      <p className="text-sm text-textSecondary mb-6">
+        Discoveries appear as you explore trails.
+      </p>
+      
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {discoveryCategories.map((category) => {
+          const count = discoveriesByType[category.type] || 0;
+          return (
+            <div 
+              key={category.type}
+              className="p-4 rounded-2xl transition-all hover:shadow-sm"
+              style={{
+                backgroundColor: count > 0 ? '#FAFAF8' : '#FFFFFF',
+                border: '1px solid #E8E8E3',
+              }}
+            >
+              <div className="text-2xl mb-2">{category.icon}</div>
+              <div className="text-lg font-medium text-text">{count}</div>
+              <div className="text-xs text-textSecondary">{category.label}</div>
+            </div>
+          );
+        })}
+      </div>
+      
+      {rareCount > 0 && (
+        <div className="mt-6 p-4 rounded-2xl" style={{ backgroundColor: '#FFF8F0', border: '1px solid #F4A34040' }}>
+          <div className="flex items-center gap-2">
+            <span className="text-lg">⭐</span>
+            <div>
+              <div className="text-sm font-medium text-text">{rareCount} rare discoveries</div>
+              <div className="text-xs text-textSecondary">Keep exploring to find more!</div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Module 3: Recent Activity
+function RecentActivity({ activity }: { activity: DashboardStats['recent_activity'] }) {
+  if (!activity || activity.length === 0) {
+    return (
+      <div className="mb-12 p-8 rounded-2xl text-center" style={{ backgroundColor: '#FAFAF8' }}>
+        <div className="text-lg font-light text-text mb-2">You haven't logged any hikes yet.</div>
+        <div className="text-sm text-textSecondary">
+          Start your first hike to build your exploration history.
+        </div>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="mb-12">
+      <h2 className="text-2xl font-light mb-6 text-text">Recent activity</h2>
+      <div className="space-y-3">
+        {activity.map((hike) => (
+          <Link
+            key={hike.id}
+            href={`/journal`}
+            className="block p-4 rounded-2xl hover:shadow-sm transition-all"
+            style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E8E3' }}
+          >
+            <div className="flex justify-between items-start">
+              <div>
+                <div className="font-medium text-text">{hike.trail_name}</div>
+                <div className="text-sm text-textSecondary">{hike.place_name}</div>
+                {hike.distance_miles && (
+                  <div className="text-xs text-textSecondary mt-1">
+                    {hike.distance_miles.toFixed(1)} mi • {hike.elevation_gain_feet ? `${Math.round(hike.elevation_gain_feet)} ft` : ''}
+                  </div>
+                )}
+              </div>
+              <div className="text-right">
+                <div className="text-xs text-textSecondary capitalize">{hike.status}</div>
+                {hike.date && (
+                  <div className="text-xs text-textSecondary">
+                    {new Date(hike.date).toLocaleDateString()}
+                  </div>
+                )}
+              </div>
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function ExplorePage() {
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
+  const [query, setQuery] = useState('');
+  const [places, setPlaces] = useState<any[]>([]);
+  const [trails, setTrails] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
+  const [loadingStats, setLoadingStats] = useState(true);
+  const [nearbyPlaces, setNearbyPlaces] = useState<any[]>([]);
+  const [showTypeahead, setShowTypeahead] = useState(false);
+  const [typeaheadResults, setTypeaheadResults] = useState<any[]>([]);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  const [showDiscoveryDemo, setShowDiscoveryDemo] = useState(false);
+  const [showVoiceDemo, setShowVoiceDemo] = useState(false);
+
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, isLoading, router]);
+
+  useEffect(() => {
+    const loadDashboardStats = async () => {
+      if (!user) return;
+      try {
+        setLoadingStats(true);
+        const response = await getDashboardStats();
+        if (response.data) {
+          setDashboardStats(response.data);
+        }
+      } catch (error) {
+        console.error('Failed to load dashboard stats:', error);
+        setDashboardStats({
+          parks_explored: 0,
+          trails_completed: 0,
+          elevation_gained_feet: 0,
+          rare_discoveries: 0,
+          last_park: null,
+          difficulty_progression: {},
+          places_visited: [],
+          discoveries_by_type: {},
+          total_hikes: 0,
+          completed_hikes: 0,
+          explorer_level: 'Beginner',
+          next_milestone: 'First trail completed',
+          next_milestone_points: 20,
+          current_points: 0,
+          recent_activity: [],
+          active_hikes: 0,
+          upcoming_trips: 0,
+          total_discoveries: 0,
+        });
+      } finally {
+        setLoadingStats(false);
+      }
+    };
+    
+    loadDashboardStats();
+    
+    // Refresh stats every 5 seconds for real-time updates
+    const statsInterval = setInterval(() => {
+      loadDashboardStats();
+    }, 5000);
+    
+    // Also refresh when page becomes visible (user returns from hike)
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        loadDashboardStats();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Load nearby places if geolocation is available
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          try {
+            const response = await findNearbyPlaces(
+              position.coords.latitude,
+              position.coords.longitude,
+              50,
+              5
+            );
+            if (response.data && Array.isArray(response.data)) {
+              setNearbyPlaces(response.data);
+            }
+          } catch (error) {
+            console.error('Failed to load nearby places:', error);
+          }
+        },
+        () => {
+          // Silently fail if geolocation is denied
+        }
+      );
+    }
+    
+    return () => {
+      clearInterval(statsInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user]);
+
+  // Handle Escape key to clear search
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        clearSearch();
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, []);
+
+  // Handle click outside to close typeahead
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setShowTypeahead(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Typeahead search while typing
+  useEffect(() => {
+    if (!query.trim()) {
+      setShowTypeahead(false);
+      setTypeaheadResults([]);
+      return;
+    }
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        let searchQuery = query.trim();
+        const parkKeywords = ['national park', 'state park', 'national monument', 'national forest'];
+        const hasParkKeyword = parkKeywords.some(keyword => 
+          searchQuery.toLowerCase().includes(keyword)
+        );
+        
+        if (!hasParkKeyword && searchQuery.length > 2) {
+          searchQuery = `${searchQuery} national park OR state park USA`;
+        }
+        
+        if (searchQuery.length > 2) {
+          const placesRes = await searchPlaces(searchQuery, 5); // Limit to 5 for typeahead
+          
+          let placesArray = [];
+          if (placesRes.data) {
+            if (Array.isArray(placesRes.data.places)) {
+              placesArray = placesRes.data.places;
+            } else if (Array.isArray(placesRes.data)) {
+              placesArray = placesRes.data;
+            } else if (placesRes.data.places && Array.isArray(placesRes.data.places)) {
+              placesArray = placesRes.data.places;
+            }
+            
+            placesArray = placesArray.filter((place: any) => {
+              const name = (place.name || '').toLowerCase();
+              const type = (place.place_type || place.type || '').toLowerCase();
+              return (
+                name.includes('national park') ||
+                name.includes('state park') ||
+                name.includes('national monument') ||
+                name.includes('national forest') ||
+                type.includes('park')
+              );
+            }).slice(0, 5);
+          }
+          
+          setTypeaheadResults(placesArray);
+          setShowTypeahead(placesArray.length > 0);
+        }
+      } catch (error) {
+        console.error('Typeahead search failed:', error);
+        setShowTypeahead(false);
+      }
+    }, 300); // Debounce 300ms
+
+    return () => clearTimeout(timeoutId);
+  }, [query]);
+
+  const clearSearch = () => {
+    setQuery('');
+    setPlaces([]);
+    setTrails([]);
+    setShowTypeahead(false);
+    setTypeaheadResults([]);
+    searchInputRef.current?.focus();
+  };
+
+  const handleSearch = async (e: React.FormEvent | { preventDefault: () => void }) => {
+    if (e && 'preventDefault' in e) {
+      e.preventDefault();
+    }
+    if (!query.trim()) {
+      clearSearch();
+      return;
+    }
+
+    setLoading(true);
+    setShowTypeahead(false);
+    setPlaces([]);
+    setTrails([]);
+    try {
+      let searchQuery = query.trim();
+      const parkKeywords = ['national park', 'state park', 'national monument', 'national forest'];
+      const hasParkKeyword = parkKeywords.some(keyword => 
+        searchQuery.toLowerCase().includes(keyword)
+      );
+      
+      if (!hasParkKeyword) {
+        searchQuery = `${searchQuery} national park OR state park USA`;
+      }
+      
+      const placesRes = await searchPlaces(searchQuery);
+      
+      let placesArray = [];
+      if (placesRes.data) {
+        if (Array.isArray(placesRes.data.places)) {
+          placesArray = placesRes.data.places;
+        } else if (Array.isArray(placesRes.data)) {
+          placesArray = placesRes.data;
+        } else if (placesRes.data.places && Array.isArray(placesRes.data.places)) {
+          placesArray = placesRes.data.places;
+        }
+        
+        placesArray = placesArray.filter((place: any) => {
+          const name = (place.name || '').toLowerCase();
+          const type = (place.place_type || place.type || '').toLowerCase();
+          const description = (place.description || '').toLowerCase();
+          
+          return (
+            name.includes('national park') ||
+            name.includes('state park') ||
+            name.includes('national monument') ||
+            name.includes('national forest') ||
+            type.includes('park') ||
+            description.includes('national park') ||
+            description.includes('state park')
+          );
+        });
+      }
+      
+      setPlaces(placesArray);
+      setTrails([]);
+    } catch (error: any) {
+      console.error('Search failed:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTypeaheadSelect = (place: any) => {
+    const placeId = place.id || place.place_id || place.google_place_id;
+    if (placeId) {
+      router.push(`/places/${placeId}`);
+    }
+  };
+
+  if (isLoading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#F6F8F7' }}>
+        <div className="text-textSecondary">Loading...</div>
+      </div>
+    );
+  }
+
+  const stats: DashboardStats = dashboardStats || {
+    parks_explored: 0,
+    trails_completed: 0,
+    elevation_gained_feet: 0,
+    rare_discoveries: 0,
+    last_park: null,
+    difficulty_progression: {},
+    places_visited: [],
+    discoveries_by_type: {},
+    total_hikes: 0,
+    completed_hikes: 0,
+    explorer_level: 'Beginner',
+    next_milestone: 'First trail completed',
+    next_milestone_points: 20,
+    current_points: 0,
+    recent_activity: [],
+    active_hikes: 0,
+    upcoming_trips: 0,
+    total_discoveries: 0,
+  };
+
+  const hasSearchResults = places.length > 0 || trails.length > 0;
+  const showDashboard = !hasSearchResults || !query.trim();
+
+  return (
+    <div className="min-h-screen" style={{ backgroundColor: '#F6F8F7' }}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+        {/* Explorer Overview Hero - ALWAYS VISIBLE */}
+        <ExplorerHero stats={stats} userName={user.name} />
+
+        {/* Gemini AI Features Showcase */}
+        <div className="mb-12 rounded-3xl p-8" style={{ background: 'linear-gradient(135deg, #4C7EF3 0%, #4F8A6B 100%)' }}>
+          <div className="flex items-center gap-3 mb-6">
+            <h2 className="text-2xl sm:text-3xl font-light text-white">✨ Powered by Gemini AI</h2>
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* AI Story Generation */}
+            <div className="p-6 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.95)' }}>
+              <div className="text-3xl mb-3">📖</div>
+              <h3 className="font-semibold text-lg mb-2 text-text">AI Story Generation</h3>
+              <p className="text-sm text-textSecondary">Transform your hikes into beautiful narratives with multiple writing styles</p>
+            </div>
+
+            {/* Smart Photo Organization */}
+            <div className="p-6 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.95)' }}>
+              <div className="text-3xl mb-3">📸</div>
+              <h3 className="font-semibold text-lg mb-2 text-text">Smart Photo Albums</h3>
+              <p className="text-sm text-textSecondary">AI automatically organizes your photos by moments and themes</p>
+            </div>
+
+            {/* Real-time Discovery ID */}
+            <button
+              onClick={() => setShowDiscoveryDemo(true)}
+              className="p-6 rounded-2xl text-left w-full transition-all hover:scale-[1.02] hover:shadow-xl"
+              style={{ backgroundColor: 'rgba(255,255,255,0.95)' }}
+            >
+              <div className="text-3xl mb-3">🔍</div>
+              <h3 className="font-semibold text-lg mb-2 text-text">Discovery Identification</h3>
+              <p className="text-sm text-textSecondary mb-3">Identify plants, animals, and landmarks instantly during your hike</p>
+              <span className="text-xs font-medium px-3 py-1 rounded-full" style={{ backgroundColor: '#4F8A6B', color: 'white' }}>
+                Try It →
+              </span>
+            </button>
+
+            {/* Trail Map Generation */}
+            <div className="p-6 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.95)' }}>
+              <div className="text-3xl mb-3">🗺️</div>
+              <h3 className="font-semibold text-lg mb-2 text-text">AI-Generated Trail Maps</h3>
+              <p className="text-sm text-textSecondary">Detailed topographic maps created offline for every trail</p>
+            </div>
+
+            {/* Voice Transcription */}
+            <button
+              onClick={() => setShowVoiceDemo(true)}
+              className="p-6 rounded-2xl text-left w-full transition-all hover:scale-[1.02] hover:shadow-xl"
+              style={{ backgroundColor: 'rgba(255,255,255,0.95)' }}
+            >
+              <div className="text-3xl mb-3">🎙️</div>
+              <h3 className="font-semibold text-lg mb-2 text-text">Voice Transcription</h3>
+              <p className="text-sm text-textSecondary mb-3">Capture your thoughts with voice notes, transcribed automatically</p>
+              <span className="text-xs font-medium px-3 py-1 rounded-full" style={{ backgroundColor: '#4C7EF3', color: 'white' }}>
+                Try It →
+              </span>
+            </button>
+
+            {/* Trip Planning */}
+            <div className="p-6 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.95)' }}>
+              <div className="text-3xl mb-3">🎒</div>
+              <h3 className="font-semibold text-lg mb-2 text-text">Intelligent Trip Planning</h3>
+              <p className="text-sm text-textSecondary">Get personalized checklists, safety tips, and recommendations</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Search Section - Always visible */}
+        <div className="mb-12">
+          <h2 className="text-3xl font-light mb-6 text-text">Start exploring</h2>
+          
+          {/* Search Input with Typeahead */}
+          <div ref={searchContainerRef} className="relative mb-8">
+            <form onSubmit={handleSearch} className="relative">
+              <div className="flex gap-4">
+                <div className="flex-1 relative">
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onFocus={() => {
+                      if (typeaheadResults.length > 0) {
+                        setShowTypeahead(true);
+                      }
+                    }}
+                    placeholder="Search parks, trails..."
+                    className="w-full px-6 py-5 pr-12 rounded-2xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-alpineBlue/20 text-lg"
+                    style={{ borderColor: '#E8E8E3' }}
+                  />
+                  {query && (
+                    <button
+                      type="button"
+                      onClick={clearSearch}
+                      className="absolute right-4 top-1/2 transform -translate-y-1/2 text-textSecondary hover:text-text transition-colors"
+                      aria-label="Clear search"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-10 py-5 rounded-2xl font-medium text-white transition-all disabled:opacity-50 hover:shadow-lg hover:scale-[1.02]"
+                  style={{ 
+                    backgroundColor: '#4C7EF3',
+                    backgroundImage: loading ? 'none' : 'linear-gradient(to bottom, #4C7EF3, #3B6ED8)',
+                  }}
+                >
+                  {loading ? 'Searching...' : 'Search'}
+                </button>
+              </div>
+            </form>
+
+            {/* Typeahead Dropdown */}
+            {showTypeahead && typeaheadResults.length > 0 && (
+              <div className="absolute z-50 w-full mt-2 bg-white rounded-2xl shadow-lg border border-border max-h-96 overflow-y-auto">
+                {typeaheadResults.map((place: any) => {
+                  const placeId = place.id || place.place_id || place.google_place_id;
+                  if (!placeId) return null;
+                  return (
+                    <button
+                      key={placeId}
+                      onClick={() => handleTypeaheadSelect(place)}
+                      className="w-full text-left p-4 hover:bg-surface transition-colors border-b border-border last:border-b-0"
+                    >
+                      <div className="font-medium text-text">{place.name}</div>
+                      <div className="text-sm text-textSecondary">{place.place_type || place.type || 'Park'}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Quick Links */}
+          {!hasSearchResults && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {nearbyPlaces.length > 0 && (
+                <button
+                  onClick={async () => {
+                    setQuery('national park');
+                    setLoading(true);
+                    setPlaces([]);
+                    setTrails([]);
+                    try {
+                      const placesRes = await searchPlaces('national park OR state park USA');
+                      let placesArray = [];
+                      if (placesRes.data) {
+                        if (Array.isArray(placesRes.data.places)) {
+                          placesArray = placesRes.data.places;
+                        } else if (Array.isArray(placesRes.data)) {
+                          placesArray = placesRes.data;
+                        } else if (placesRes.data.places && Array.isArray(placesRes.data.places)) {
+                          placesArray = placesRes.data.places;
+                        }
+                        placesArray = placesArray.filter((place: any) => {
+                          const name = (place.name || '').toLowerCase();
+                          const type = (place.place_type || place.type || '').toLowerCase();
+                          return name.includes('national park') || name.includes('state park') || type.includes('park');
+                        });
+                      }
+                      setPlaces(placesArray);
+                    } catch (error) {
+                      console.error('Search failed:', error);
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                  className="p-4 rounded-2xl text-left hover:shadow-sm transition-all cursor-pointer animate-slide-in"
+                  style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3', animationDelay: '0.1s', opacity: 0 }}
+                >
+                  <div className="text-sm font-medium text-text mb-2">Nearby parks</div>
+                  <div className="text-xs text-textSecondary">
+                    {nearbyPlaces.length} parks within 50 miles
+                  </div>
+                </button>
+              )}
+              <button
+                onClick={async () => {
+                  setQuery('easy trail national park');
+                  setLoading(true);
+                  setPlaces([]);
+                  setTrails([]);
+                  try {
+                    const placesRes = await searchPlaces('easy trail national park OR state park USA');
+                    let placesArray = [];
+                    if (placesRes.data) {
+                      if (Array.isArray(placesRes.data.places)) {
+                        placesArray = placesRes.data.places;
+                      } else if (Array.isArray(placesRes.data)) {
+                        placesArray = placesRes.data;
+                      } else if (placesRes.data.places && Array.isArray(placesRes.data.places)) {
+                        placesArray = placesRes.data.places;
+                      }
+                      placesArray = placesArray.filter((place: any) => {
+                        const name = (place.name || '').toLowerCase();
+                        const type = (place.place_type || place.type || '').toLowerCase();
+                        return name.includes('national park') || name.includes('state park') || type.includes('park');
+                      });
+                    }
+                    setPlaces(placesArray);
+                  } catch (error) {
+                    console.error('Search failed:', error);
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                className="p-4 rounded-2xl text-left hover:shadow-sm transition-all cursor-pointer animate-slide-in"
+                style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3', animationDelay: '0.2s', opacity: 0 }}
+              >
+                <div className="text-sm font-medium text-text mb-2">Popular beginner trails</div>
+                <div className="text-xs text-textSecondary">Easy trails to get started</div>
+              </button>
+              <button
+                onClick={async () => {
+                  setQuery('state park');
+                  setLoading(true);
+                  setPlaces([]);
+                  setTrails([]);
+                  try {
+                    const placesRes = await searchPlaces('state park USA');
+                    let placesArray = [];
+                    if (placesRes.data) {
+                      if (Array.isArray(placesRes.data.places)) {
+                        placesArray = placesRes.data.places;
+                      } else if (Array.isArray(placesRes.data)) {
+                        placesArray = placesRes.data;
+                      } else if (placesRes.data.places && Array.isArray(placesRes.data.places)) {
+                        placesArray = placesRes.data.places;
+                      }
+                      placesArray = placesArray.filter((place: any) => {
+                        const name = (place.name || '').toLowerCase();
+                        const type = (place.place_type || place.type || '').toLowerCase();
+                        return name.includes('state park') || type.includes('park');
+                      });
+                    }
+                    setPlaces(placesArray);
+                  } catch (error) {
+                    console.error('Search failed:', error);
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                className="p-4 rounded-2xl text-left hover:shadow-sm transition-all cursor-pointer animate-slide-in"
+                style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3', animationDelay: '0.3s', opacity: 0 }}
+              >
+                <div className="text-sm font-medium text-text mb-2">Parks within 50 miles</div>
+                <div className="text-xs text-textSecondary">Explore your local area</div>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Search Results Section - Shows as overlay, doesn't hide dashboard */}
+        {hasSearchResults && (
+          <section className="mb-12">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-light text-text">
+                {places.length > 0 ? 'Parks' : 'Trails'}
+              </h2>
+              <button
+                onClick={clearSearch}
+                className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+                style={{ 
+                  backgroundColor: '#FAFAF8', 
+                  border: '1px solid #E8E8E3', 
+                  color: '#5F6F6A' 
+                }}
+              >
+                Clear results
+              </button>
+            </div>
+            
+            {places.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {places.map((place) => {
+                  const placeId = place.id || place.place_id || place.google_place_id;
+                  if (!placeId) return null;
+                  return (
+                    <Link
+                      key={placeId}
+                      href={`/places/${placeId}`}
+                      className="block p-6 rounded-2xl hover:shadow-md transition-all"
+                      style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E8E3' }}
+                    >
+                      <h3 className="text-xl font-medium mb-2 text-text">{place.name}</h3>
+                      <p className="text-sm text-textSecondary">{place.place_type || place.type || 'Park'}</p>
+                      {place.description && (
+                        <p className="text-sm text-textSecondary mt-2 line-clamp-2">{place.description}</p>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+
+            {trails.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {trails.map((trail) => (
+                  <Link
+                    key={trail.id}
+                    href={`/hikes/new?trailId=${trail.id}`}
+                    className="block p-6 rounded-2xl hover:shadow-md transition-all"
+                    style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E8E3' }}
+                  >
+                    <h3 className="text-xl font-medium mb-2 text-text">{trail.name}</h3>
+                    <div className="flex gap-4 text-sm text-textSecondary">
+                      {trail.distance_miles && <span>{trail.distance_miles} mi</span>}
+                      {trail.lengthMiles && <span>{trail.lengthMiles} mi</span>}
+                      {trail.difficulty && <span>{trail.difficulty}</span>}
+                      {trail.rating && <span>⭐ {trail.rating.toFixed(1)}</span>}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* No Results Message */}
+        {!loading && hasSearchResults && places.length === 0 && trails.length === 0 && (
+          <div className="mb-12 p-8 rounded-2xl text-center" style={{ backgroundColor: '#FAFAF8', border: '1px solid #E8E8E3' }}>
+            <p className="text-textSecondary text-lg mb-2">No parks found</p>
+            <p className="text-textSecondary text-sm mb-4">
+              Try searching for "national park" or "state park" in the USA
+            </p>
+            <button
+              onClick={clearSearch}
+              className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+              style={{ 
+                backgroundColor: '#4C7EF3', 
+                color: 'white' 
+              }}
+            >
+              Back to dashboard
+            </button>
+          </div>
+        )}
+
+        {/* Dashboard Modules - ALWAYS VISIBLE (unless search results are shown, but still accessible) */}
+        {showDashboard && (
+          <div className="space-y-12 mb-16">
+            <ExplorationProgress stats={stats} />
+            <DiscoveriesModule 
+              discoveriesByType={stats.discoveries_by_type} 
+              rareCount={stats.rare_discoveries} 
+            />
+            <RecentActivity activity={stats.recent_activity} />
+          </div>
+        )}
+
+        {/* Show "Back to dashboard" button when search results are shown */}
+        {hasSearchResults && (
+          <div className="mb-12">
+            <button
+              onClick={clearSearch}
+              className="px-6 py-3 rounded-xl text-sm font-medium transition-colors"
+              style={{ 
+                backgroundColor: '#FAFAF8', 
+                border: '1px solid #E8E8E3', 
+                color: '#5F6F6A' 
+              }}
+            >
+              ← Back to dashboard
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Discovery Demo Modal */}
+      {showDiscoveryDemo && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="relative max-w-4xl w-full max-h-[90vh] overflow-auto">
+            <button
+              onClick={() => setShowDiscoveryDemo(false)}
+              className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110"
+              style={{ backgroundColor: 'rgba(0,0,0,0.5)', color: 'white' }}
+            >
+              ✕
+            </button>
+            <DiscoveryIdentifier
+              onDiscoveryIdentified={(result) => {
+                console.log('Discovery identified:', result);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Voice Demo Modal */}
+      {showVoiceDemo && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="relative max-w-4xl w-full max-h-[90vh] overflow-auto">
+            <button
+              onClick={() => setShowVoiceDemo(false)}
+              className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110"
+              style={{ backgroundColor: 'rgba(0,0,0,0.5)', color: 'white' }}
+            >
+              ✕
+            </button>
+            <VoiceTranscriber
+              autoSave={false}
+              onTranscriptionComplete={(result) => {
+                console.log('Transcription complete:', result);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      <style jsx global>{`
+        @keyframes fade-in {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+        
+        .animate-fade-in {
+          animation: fade-in 0.3s ease-out;
+        }
+      `}</style>
+    </div>
+  );
+}
