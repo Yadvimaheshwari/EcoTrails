@@ -12,6 +12,7 @@ export const colors = {
   accent: designColors.skyAccent,
   accentLight: designColors.accentLight,
   text: designColors.text,
+  textPrimary: designColors.text,
   textSecondary: designColors.textSecondary,
   textTertiary: designColors.textTertiary,
   success: designColors.success,
