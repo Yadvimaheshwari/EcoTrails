@@ -267,7 +267,7 @@ export const HomeScreen: React.FC = () => {
                 <View style={styles.hikeCardContent}>
                   <Ionicons name="footsteps" size={32} color="#fff" />
                   <View style={styles.hikeCardText}>
-                    <Text style={styles.hikeCardTitle}>{currentHike.trail?.name || 'Active Hike'}</Text>
+                    <Text style={styles.hikeCardTitle}>{currentHike.name || 'Active Hike'}</Text>
                     <Text style={styles.hikeCardSubtitle}>Hike in progress</Text>
                   </View>
                 </View>
