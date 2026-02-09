@@ -3,6 +3,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import Constants from 'expo-constants';
 
+// Production API URL - use this for deployed backend
+const PRODUCTION_API_URL = 'https://ec0aa055-ea47-470e-bc88-1706654d1a17.preview.emergentagent.com';
+
 // On a physical device, localhost refers to the phone itself.
 // Use the dev machine's LAN IP so the phone can reach the backend.
 const DEV_MACHINE_IP =
@@ -14,11 +17,9 @@ const ENV_BASE =
   (process.env.NEXT_PUBLIC_API_BASE_URL as string | undefined) ||
   (process.env.NEXT_PUBLIC_API_URL as string | undefined);
 
-export const API_BASE_URL = ENV_BASE
-  ? ENV_BASE
-  : __DEV__
-    ? `http://${DEV_MACHINE_IP}:8000`
-    : 'https://api.ecotrails.app';
+// Always use production URL for now (works on both simulator and device)
+// Change to local dev URL only when running backend locally
+export const API_BASE_URL = ENV_BASE || PRODUCTION_API_URL;
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
