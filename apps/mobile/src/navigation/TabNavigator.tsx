@@ -2,10 +2,10 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../config/colors';
+import { HomeScreen } from '../screens/HomeScreen';
 import { ExploreScreen } from '../screens/ExploreScreen';
 import { HikeScreen } from '../screens/HikeScreen';
 import { JournalScreen } from '../screens/JournalScreen';
-import { TerrainScreen } from '../screens/TerrainScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 
 const Tab = createBottomTabNavigator();
@@ -28,17 +28,26 @@ export const TabNavigator: React.FC = () => {
           shadowOpacity: 0,
         },
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: 11,
           fontFamily: 'Inter_500Medium',
         },
       }}
     >
       <Tab.Screen
+        name="Home"
+        component={HomeScreen}
+        options={{
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
         name="Explore"
         component={ExploreScreen}
         options={{
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="map-outline" size={size} color={color} />
+            <Ionicons name="compass" size={size} color={color} />
           ),
         }}
       />
@@ -47,7 +56,7 @@ export const TabNavigator: React.FC = () => {
         component={HikeScreen}
         options={{
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="footsteps-outline" size={size} color={color} />
+            <Ionicons name="footsteps" size={size} color={color} />
           ),
         }}
       />
@@ -56,16 +65,7 @@ export const TabNavigator: React.FC = () => {
         component={JournalScreen}
         options={{
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="book-outline" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Terrain"
-        component={TerrainScreen}
-        options={{
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="layers-outline" size={size} color={color} />
+            <Ionicons name="book" size={size} color={color} />
           ),
         }}
       />
@@ -74,7 +74,7 @@ export const TabNavigator: React.FC = () => {
         component={ProfileScreen}
         options={{
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-outline" size={size} color={color} />
+            <Ionicons name="person" size={size} color={color} />
           ),
         }}
       />
